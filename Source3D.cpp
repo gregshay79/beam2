@@ -1,0 +1,397 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <Eigen/Dense>
+#include "opengl3.h"
+#include "heatmap.h"
+
+
+#define M_PI 3.141592653589793238462643383
+
+mygraphics graphics;
+
+// Function to calculate moment of inertia for a hollow circular tube
+double calculateHollowTubeMomentOfInertia(double outerDiameter, double innerDiameter) {
+    double outerRadius = outerDiameter / 2.0;
+    double innerRadius = innerDiameter / 2.0;
+    return M_PI * (pow(outerRadius, 4) - pow(innerRadius, 4)) / 4.0;
+}
+
+// Function to calculate cross-sectional area for a hollow circular tube
+double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
+    double outerRadius = outerDiameter / 2.0;
+    double innerRadius = innerDiameter / 2.0;
+    return M_PI * (pow(outerRadius, 2) - pow(innerRadius, 2));
+}
+
+class BeamElement3D {
+private:
+    double length;           // Element length (m)
+    double E;                // Young's modulus (Pa)
+    double G;                // Shear modulus (Pa)
+    double Iyy;              // Second moment about y (m^4)
+    double Izz;              // Second moment about z (m^4)
+    double J;                // Polar moment / torsional constant (m^4)
+    double rho;              // Density (kg/m^3)
+    double area;             // Cross-sectional area (m^2)
+
+public:
+    BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area)
+        : length(_length), E(_E), G(_G), Iyy(_Iyy), Izz(_Izz), J(_J), rho(_rho), area(_area) {
+    }
+
+    // Local stiffness matrix for 3D Euler-Bernoulli beam element (12x12)
+    Eigen::Matrix<double, 12, 12> getStiffnessMatrix() const {
+        Eigen::Matrix<double, 12, 12> K = Eigen::Matrix<double, 12, 12>::Zero();
+        double L = length;
+        double L2 = L * L;
+        double L3 = L2 * L;
+
+        // Axial
+        double EA_L = E * area / L;
+        K(0, 0) = EA_L; K(0, 6) = -EA_L;
+        K(6, 0) = -EA_L; K(6, 6) = EA_L;
+
+        // Torsion
+        double GJ_L = G * J / L;
+        K(3, 3) = GJ_L; K(3, 9) = -GJ_L;
+        K(9, 3) = -GJ_L; K(9, 9) = GJ_L;
+
+        // Bending about z  -> transverse displacement in y (DOFs 1,5,7,11)
+        double kyz = E * Izz / L3;
+        int idx_y[4] = { 1, 5, 7, 11 };
+        double Kyz_local[4][4] = {
+            {12.0, 6.0 * L, -12.0, 6.0 * L},
+            {6.0 * L, 4.0 * L2, -6.0 * L, 2.0 * L2},
+            {-12.0, -6.0 * L, 12.0, -6.0 * L},
+            {6.0 * L, 2.0 * L2, -6.0 * L, 4.0 * L2}
+        };
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c)
+                K(idx_y[r], idx_y[c]) += kyz * Kyz_local[r][c];
+
+        // Bending about y  -> transverse displacement in z (DOFs 2,4,8,10)
+        double kzy = E * Iyy / L3;
+        int idx_z[4] = { 2, 4, 8, 10 };
+        double Kzy_local[4][4] = {
+            {12.0, -6.0 * L, -12.0, -6.0 * L},
+            {-6.0 * L, 4.0 * L2, 6.0 * L, 2.0 * L2},
+            {-12.0, 6.0 * L, 12.0, 6.0 * L},
+            {-6.0 * L, 2.0 * L2, 6.0 * L, 4.0 * L2}
+        };
+        // Note: signs arranged to match standard element stiffness orientation
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c)
+                K(idx_z[r], idx_z[c]) += kzy * Kzy_local[r][c];
+
+        return K;
+    }
+
+    // Simple lumped mass matrix for beam element (12x12)
+    // This is a pragmatic choice to keep the implementation compact; replace with a consistent mass matrix if higher accuracy is required.
+    Eigen::Matrix<double, 12, 12> getMassMatrix() const {
+        Eigen::Matrix<double, 12, 12> M = Eigen::Matrix<double, 12, 12>::Zero();
+        double L = length;
+        double m = rho * area * L;
+
+        // Lump half translational mass to each node (u_x, u_y, u_z)
+        for (int d = 0; d < 3; ++d) {
+            M(d, d) = m * 0.5;
+            M(d + 6, d + 6) = m * 0.5;
+        }
+
+        // Approximate rotational inertia (very approximate, for dynamics only)
+        // Use a heuristic Irot = m * L^2 / 12 (like rod's inertia) split half to each node
+        double Irot = m * L * L / 12.0;
+        for (int d = 3; d < 6; ++d) {
+            M(d, d) = Irot * 0.5;
+            M(d + 6, d + 6) = Irot * 0.5;
+        }
+
+        return M;
+    }
+};
+
+class CantileverBeam3D {
+private:
+    double length;           // Total beam length (m)
+    double E;                // Young's modulus (Pa)
+    double nu;               // Poisson's ratio
+    double rho;              // Density (kg/m^3)
+    double area;             // Cross-sectional area (m^2)
+    double Iyy, Izz, J;      // section properties
+    int numElements;         // Number of finite elements
+    Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
+
+    std::vector<BeamElement3D> elements;
+    Eigen::MatrixXd globalStiffnessMatrix;
+    Eigen::MatrixXd globalMassMatrix;
+    Eigen::MatrixXd globalDampingMatrix;
+    Eigen::VectorXd forceVector;
+
+public:
+    CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
+        int _numElements, const Eigen::Vector3d& _endPointLoad,
+        double _outDia, double _inDia, double _taper)
+        : length(_length), E(_E), nu(_nu), rho(_rho), area(_area),
+        numElements(_numElements), endPointLoad(_endPointLoad) {
+
+        double elementLength = length / numElements;
+
+        // Build elements with tapered properties along the span
+        for (int i = 0; i < numElements; ++i) {
+            double taper_factor = 1.0 - _taper * double(i) / double(numElements);
+            double outD = _outDia * taper_factor;
+            double inD = _inDia * taper_factor;
+            double A = calculateHollowTubeArea(outD, inD);
+            double I = calculateHollowTubeMomentOfInertia(outD, inD); // Iyy == Izz for circular
+            double Jp = 2.0 * I; // polar moment for circular tube Jp = Iyy + Izz = 2*I
+            double G = E / (2.0 * (1.0 + nu));
+            elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A);
+        }
+
+        // Global DOFs: 6 per node
+        int totalDOFs = 6 * (numElements + 1);
+        globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
+        globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
+        forceVector = Eigen::VectorXd::Zero(totalDOFs);
+
+        assembleGlobalMatrices();
+        applyBoundaryConditions();
+        applyLoads();
+    }
+
+    void assembleGlobalMatrices() {
+        for (int e = 0; e < numElements; ++e) {
+            Eigen::Matrix<double, 12, 12> localK = elements[e].getStiffnessMatrix();
+            Eigen::Matrix<double, 12, 12> localM = elements[e].getMassMatrix();
+
+            int startDOF = 6 * e;
+            for (int r = 0; r < 12; ++r) {
+                for (int c = 0; c < 12; ++c) {
+                    int gr = startDOF + r;
+                    int gc = startDOF + c;
+                    globalStiffnessMatrix(gr, gc) += localK(r, c);
+                    globalMassMatrix(gr, gc) += localM(r, c);
+                }
+            }
+        }
+    }
+
+    void applyBoundaryConditions() {
+        // Fix all 6 DOFs at the first node (cantilever root) using heavy penalty
+        double penalty = 1e15;
+        for (int i = 0; i < 6; ++i) {
+            globalStiffnessMatrix(i, i) = penalty;
+            // zero out coupling to be safe
+            for (int j = 0; j < (int)globalStiffnessMatrix.rows(); ++j) {
+                if (j != i) {
+                    globalStiffnessMatrix(i, j) = 0.0;
+                    globalStiffnessMatrix(j, i) = 0.0;
+                }
+            }
+        }
+    }
+
+    void applyLoads() {
+        // Apply the end point load at the last node translations (u_x,u_y,u_z)
+        int lastNode = numElements;
+        int base = 6 * lastNode;
+        forceVector(base + 0) = endPointLoad(0);
+        forceVector(base + 1) = endPointLoad(1);
+        forceVector(base + 2) = endPointLoad(2);
+    }
+
+    void solveStaticDisplacement() {
+        int totalDOFs = 6 * (numElements + 1);
+        int activeDOFs = totalDOFs - 6; // excluding fixed first node
+
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
+
+        Eigen::VectorXd displacements = Kactive.colPivHouseholderQr().solve(Factive);
+
+        Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
+        fullDisp.tail(activeDOFs) = displacements;
+
+        std::cout << "Static Displacement Analysis Results (3D):" << std::endl;
+        std::cout << "------------------------------------------" << std::endl;
+        for (int n = 0; n <= numElements; ++n) {
+            double pos = double(n) * (length / numElements);
+            std::cout << "Node " << n << " (x = " << pos << " m):" << std::endl;
+            std::cout << "  ux: " << fullDisp(6 * n + 0) << " m" << std::endl;
+            std::cout << "  uy: " << fullDisp(6 * n + 1) << " m" << std::endl;
+            std::cout << "  uz: " << fullDisp(6 * n + 2) << " m" << std::endl;
+            std::cout << "  rot_x: " << fullDisp(6 * n + 3) << " rad" << std::endl;
+            std::cout << "  rot_y: " << fullDisp(6 * n + 4) << " rad" << std::endl;
+            std::cout << "  rot_z: " << fullDisp(6 * n + 5) << " rad" << std::endl;
+            std::cout << std::endl;
+        }
+
+        // Simple visualization: plot uy vs x
+        std::vector<LineSegment> lineSegments;
+        float sc = 1.8f / float(numElements + 1);
+        for (int n = 0; n < numElements; ++n) {
+            float x1 = sc * n - 0.9f;
+            float x2 = sc * (n + 1) - 0.9f;
+            float y1 = -1.0f * static_cast<float>(fullDisp(6 * n + 1)); // uy
+            float y2 = -1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
+
+            // curvature estimate from change in rotations about z and y
+            double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
+            double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
+            float bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
+            RGB color = valueToHeatmapColor(bend);
+            lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
+        }
+        graphics.draw(lineSegments);
+    }
+
+    void solveFrequencyAnalysis(int numModes) {
+        int totalDOFs = 6 * (numElements + 1);
+        int activeDOFs = totalDOFs - 6;
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+
+        Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver(Kactive, Mactive);
+
+        std::cout << "Natural Frequencies (3D):" << std::endl;
+        for (int i = 0; i < std::min(numModes, activeDOFs); ++i) {
+            double omega2 = solver.eigenvalues()(i);
+            if (omega2 <= 0) continue;
+            double freq = std::sqrt(omega2) / (2.0 * M_PI);
+            std::cout << "Mode " << (i + 1) << ": " << freq << " Hz" << std::endl;
+        }
+    }
+
+    // Time integration (Newmark) simplified for 3D DOFs; uses lumped/approx mass so it's stable-ish.
+    void simulateTimeDomain(double duration, double timeStep, double dampingRatio = 0.05) {
+        int totalDOFs = 6 * (numElements + 1);
+        int activeDOFs = totalDOFs - 6;
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
+
+        // Rayleigh damping using two lowest modes (if available)
+        Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
+        solver.compute(Kactive, Mactive);
+        double omega1 = 0.0, omega2 = 0.0;
+        if (solver.eigenvalues().size() >= 2) {
+            omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
+            omega2 = std::sqrt(std::max(0.0, solver.eigenvalues()(1)));
+        }
+        else if (solver.eigenvalues().size() == 1) {
+            omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
+            omega2 = 2.0 * omega1;
+        }
+        else {
+            omega1 = 1.0; omega2 = 2.0;
+        }
+        double alpha = dampingRatio * 2.0 * omega1 * omega2 / (omega1 + omega2);
+        double beta = dampingRatio * 2.0 / (omega1 + omega2);
+        Eigen::MatrixXd Cactive = alpha * Mactive + beta * Kactive;
+
+        // Newmark parameters
+        double gamma = 0.5;
+        double beta_nb = 0.25;
+        Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs); // displacement
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(activeDOFs); // velocity
+        Eigen::VectorXd a = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
+
+        Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
+        Eigen::LLT<Eigen::MatrixXd> lltOfLHS(LHS);
+
+        int numSteps = static_cast<int>(duration / timeStep);
+        for (int step = 0; step <= numSteps; ++step) {
+            // visualize current state: reconstruct full displacement vector
+            Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
+            fullDisp.tail(activeDOFs) = u;
+
+            std::vector<LineSegment> lineSegments;
+            float sc = 1.8f / float(numElements + 1);
+            for (int n = 0; n < numElements; ++n) {
+                float x1 = sc * n - 0.9f;
+                float x2 = sc * (n + 1) - 0.9f;
+                float y1 = -1.0f * static_cast<float>(fullDisp(6 * n + 1));
+                float y2 = -1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
+                double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
+                double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
+                float bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
+                RGB color = valueToHeatmapColor(bend);
+                lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
+            }
+            graphics.draw(lineSegments);
+
+            // Newmark predictor
+            Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * a;
+            Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * a;
+
+            Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+
+            Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+
+            a = deltaA;
+            v = vPred + gamma * timeStep * a;
+            u = uPred + beta_nb * timeStep * timeStep * a;
+        }
+    }
+};
+
+
+
+int main() {
+
+    graphics.setupGL();
+
+    // Hollow aluminum tube parameters
+    double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)
+    double thickness = 0.25 / 39.37;              // 1/4" -> m
+    double outerDiameter = 8.0 / 39.37;           // 8" -> m
+    double innerDiameter = outerDiameter - 2.0 * thickness;
+    double E = 69e9;                              // Young's modulus for aluminum (Pa)
+    double nu = 0.33;                             // Poisson's ratio
+    double rho = 2700.0;                          // Density (kg/m^3)
+    double taper = 0.5;
+
+    double area = calculateHollowTubeArea(outerDiameter, innerDiameter);
+    double I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
+    double J = 2.0 * I; // polar moment for circular tube
+
+    int numElements = 40;
+    // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
+    Eigen::Vector3d pointLoad(0.0, -30.0 * 4.44822, 0.0); // convert lbf to N and apply in Y
+
+    std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
+    std::cout << "==========================================================" << std::endl;
+    std::cout << "Beam length: " << length << " m" << std::endl;
+    std::cout << "Outer diameter: " << outerDiameter << " m" << std::endl;
+    std::cout << "Inner diameter: " << innerDiameter << " m" << std::endl;
+    std::cout << "Cross-sectional area: " << area << " m^2" << std::endl;
+    std::cout << "Moment of inertia (Iyy=Izz): " << I << " m^4" << std::endl;
+    std::cout << "Polar moment approx J: " << J << " m^4" << std::endl;
+    std::cout << "Young's modulus: " << E << " Pa" << std::endl;
+    std::cout << "Poisson ratio: " << nu << std::endl;
+    std::cout << "Density: " << rho << " kg/m^3" << std::endl;
+    std::cout << "Point load at free end (N): (" << pointLoad.transpose() << ")" << std::endl;
+    std::cout << "Number of elements: " << numElements << std::endl << std::endl;
+
+    CantileverBeam3D beam(length, E, nu, rho, area, numElements, pointLoad, outerDiameter, innerDiameter, taper);
+
+    // Static analysis
+    //beam.solveStaticDisplacement();
+
+    std::cout << std::endl;
+
+    // Modal analysis (first 6 modes)
+    //beam.solveFrequencyAnalysis(6);
+
+    std::cout << std::endl;
+
+    // Time domain simulation
+    beam.simulateTimeDomain(10.0, 0.05);
+
+    graphics.waitForCompletion();
+    graphics.closeGL();
+
+    return 0;
+}

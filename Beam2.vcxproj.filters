@@ -15,13 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Source2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="heatmap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="opengl3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source3D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

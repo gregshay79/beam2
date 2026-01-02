@@ -274,83 +274,104 @@ public:
         dvdt = invM * (F - K * u - C * v);
     }
 
-    //void simulateTimeDomainRK4(double duration, double timeStep, double dampingRatio = 0.05) {
-    //    // Extract active DOFs (excluding fixed DOFs)
-    //    int numDOFs = 2 * (numElements + 1) - 2;
-    //    Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(numDOFs, numDOFs);
-    //    Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(numDOFs, numDOFs);
-    //    Eigen::VectorXd Factive = forceVector.tail(numDOFs);
+    void simulateTimeDomainRK4(double duration, double timeStep, double dampingRatio = 0.05) {
 
-    //    // Compute Rayleigh damping matrix: C = alpha*M + beta*K
-    //    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver(Kactive, Mactive);
-    //    double omega1 = std::sqrt(solver.eigenvalues()(0));
-    //    double omega2 = std::sqrt(solver.eigenvalues()(1));
+        // Vector to store line segments
+        std::vector<LineSegment> lineSegments;
+        float maxbend = 0;
 
-    //    // Solve for alpha and beta to get desired damping at two frequencies
-    //    double alpha = dampingRatio * 2.0 * omega1 * omega2 / (omega1 + omega2);
-    //    double beta = dampingRatio * 2.0 / (omega1 + omega2);
+        // Extract active DOFs (excluding fixed DOFs)
+        int numDOFs = 2 * (numElements + 1) - 2;
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(numDOFs, numDOFs);
+        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(numDOFs, numDOFs);
+        Eigen::VectorXd Factive = forceVector.tail(numDOFs);
 
-    //    Eigen::MatrixXd Cactive = alpha * Mactive + beta * Kactive;
+        // Compute Rayleigh damping matrix: C = alpha*M + beta*K
+        Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver(Kactive, Mactive);
+        double omega1 = std::sqrt(solver.eigenvalues()(0));
+        double omega2 = std::sqrt(solver.eigenvalues()(1));
 
-    //    // Pre-compute the inverse of mass matrix for efficiency
-    //    Eigen::MatrixXd invMactive = Mactive.inverse();
+        // Solve for alpha and beta to get desired damping at two frequencies
+        double alpha = dampingRatio * 2.0 * omega1 * omega2 / (omega1 + omega2);
+        double beta = dampingRatio * 2.0 / (omega1 + omega2);
 
-    //    // Initial conditions (zero displacement and velocity)
-    //    Eigen::VectorXd u = Eigen::VectorXd::Zero(numDOFs);
-    //    Eigen::VectorXd v = Eigen::VectorXd::Zero(numDOFs);
+        Eigen::MatrixXd Cactive = alpha * Mactive + beta * Kactive;
 
-    //    std::cout << "Time-Domain Simulation (RK4):" << std::endl;
-    //    std::cout << "-------------------------" << std::endl;
-    //    std::cout << "Time (s), Tip Deflection (m)" << std::endl;
+        // Pre-compute the inverse of mass matrix for efficiency
+        Eigen::MatrixXd invMactive = Mactive.inverse();
 
-    //    // Time stepping with 4th order Runge-Kutta
-    //    int numTimeSteps = static_cast<int>(duration / timeStep);
+        // Initial conditions (zero displacement and velocity)
+        Eigen::VectorXd u = Eigen::VectorXd::Zero(numDOFs);
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(numDOFs);
 
-    //    // Temporary variables for the RK4 method
-    //    Eigen::VectorXd k1u, k1v, k2u, k2v, k3u, k3v, k4u, k4v;
-    //    k1u.resize(numDOFs); k1v.resize(numDOFs);
-    //    k2u.resize(numDOFs); k2v.resize(numDOFs);
-    //    k3u.resize(numDOFs); k3v.resize(numDOFs);
-    //    k4u.resize(numDOFs); k4v.resize(numDOFs);
+        std::cout << "Time-Domain Simulation (RK4):" << std::endl;
+        std::cout << "-------------------------" << std::endl;
+        std::cout << "Time (s), Tip Deflection (m)" << std::endl;
 
-    //    for (int step = 0; step <= numTimeSteps; ++step) {
-    //        double time = step * timeStep;
+        // Time stepping with 4th order Runge-Kutta
+        int numTimeSteps = static_cast<int>(duration / timeStep);
 
-    //        // Print tip deflection (last displacement DOF)
-    //        std::cout << time << ", " << u(numDOFs - 2) << std::endl;
+        // Temporary variables for the RK4 method
+        Eigen::VectorXd k1u, k1v, k2u, k2v, k3u, k3v, k4u, k4v;
+        k1u.resize(numDOFs); k1v.resize(numDOFs);
+        k2u.resize(numDOFs); k2v.resize(numDOFs);
+        k3u.resize(numDOFs); k3v.resize(numDOFs);
+        k4u.resize(numDOFs); k4v.resize(numDOFs);
 
-    //        // RK4 integration step
+        for (int step = 0; step <= numTimeSteps; ++step) {
+            double time = step * timeStep;
+
+            // Print tip deflection (last displacement DOF)
+            //std::cout << time << ", " << u(numDOFs - 2) << std::endl;
+
+            lineSegments.clear();
+            float sc = 1.9 / numDOFs;
+            for (int i = 0; i < numDOFs - 4; i += 2) {
+                float x1, y1, x2, y2;
+                x1 = sc * i - 0.9;
+                y1 = -1.0 * u(i);
+                x2 = sc * (i + 2) - 0.9;
+                y2 = -1.0 * u(i + 2);
+                float bend = 2000.0 / 1.6 * fabs(u(i + 1) - u(i + 3));
+                if (bend > maxbend) maxbend = bend;
+                RGB color = valueToHeatmapColor(bend);
+                lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0, color.g / 255.0, color.b / 255.0);
+            }
+
+            graphics.draw(lineSegments);
+
+            // RK4 integration step
 
 
 
-    //        // Step 1: Evaluate derivatives at current time
-    //        computeStateDerivative(u, v, invMactive, Kactive, Cactive, Factive, k1u, k1v);
+            // Step 1: Evaluate derivatives at current time
+            computeStateDerivative(u, v, invMactive, Kactive, Cactive, Factive, k1u, k1v);
 
-    //        // Step 2: Evaluate derivatives at time + h/2 using step 1 derivatives
-    //        computeStateDerivative(
-    //            u + 0.5 * timeStep * k1u,
-    //            v + 0.5 * timeStep * k1v,
-    //            invMactive, Kactive, Cactive, Factive, k2u, k2v);
+            // Step 2: Evaluate derivatives at time + h/2 using step 1 derivatives
+            computeStateDerivative(
+                u + 0.5 * timeStep * k1u,
+                v + 0.5 * timeStep * k1v,
+                invMactive, Kactive, Cactive, Factive, k2u, k2v);
 
-    //        // Step 3: Evaluate derivatives at time + h/2 using step 2 derivatives
-    //        computeStateDerivative(
-    //            u + 0.5 * timeStep * k2u,
-    //            v + 0.5 * timeStep * k2v,
-    //            invMactive, Kactive, Cactive, Factive, k3u, k3v);
+            // Step 3: Evaluate derivatives at time + h/2 using step 2 derivatives
+            computeStateDerivative(
+                u + 0.5 * timeStep * k2u,
+                v + 0.5 * timeStep * k2v,
+                invMactive, Kactive, Cactive, Factive, k3u, k3v);
 
-    //        // Step 4: Evaluate derivatives at time + h using step 3 derivatives
-    //        computeStateDerivative(
-    //            u + timeStep * k3u,
-    //            v + timeStep * k3v,
-    //            invMactive, Kactive, Cactive, Factive, k4u, k4v);
+            // Step 4: Evaluate derivatives at time + h using step 3 derivatives
+            computeStateDerivative(
+                u + timeStep * k3u,
+                v + timeStep * k3v,
+                invMactive, Kactive, Cactive, Factive, k4u, k4v);
 
-    //        // Update displacements and velocities using weighted average of the four derivatives
-    //        u += (timeStep / 6.0) * (k1u + 2.0 * k2u + 2.0 * k3u + k4u);
-    //        v += (timeStep / 6.0) * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
+            // Update displacements and velocities using weighted average of the four derivatives
+            u += (timeStep / 6.0) * (k1u + 2.0 * k2u + 2.0 * k3u + k4u);
+            v += (timeStep / 6.0) * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
 
-    //        // Optional: Apply time-varying force here if needed
-    //    }
-    //}
+            // Optional: Apply time-varying force here if needed
+        }
+    }
 
     void simulateTimeDomain(double duration, double timeStep, double dampingRatio = 0.05) {
 
@@ -393,11 +414,13 @@ public:
         std::cout << "Time (s), Tip Deflection (m)" << std::endl;
         float maxbend = 0;
         int numTimeSteps = static_cast<int>(duration / timeStep);
+
+
         for (int step = 0; step <= numTimeSteps; ++step) {
-            double time = step * timeStep;
+            //double time = step * timeStep;
 
             // Print tip deflection (last displacement DOF)
-            std::cout << time << ", " << u(numDOFs - 2) << std::endl;
+            //std::cout << time << ", " << u(numDOFs - 2) << std::endl;
 
             lineSegments.clear();
             float sc = 1.9/numDOFs;
@@ -441,14 +464,14 @@ public:
 
 
 
-int main() {
+int main2D() {
     
     graphics.setupGL();
 
     // Hollow aluminum tube parameters
-    double length = 12.8;                 // Length (m)
-    double thickness = .125 / 39.37;
-    double outerDiameter = 8/39.37;         // Outer diameter (m)
+    double length = 45.0 * 12/39.37;                 // Length (ft)
+    double thickness = 0.25 / 39.37; // 1/4"
+    double outerDiameter = 8 /39.37;         // Outer diameter (in)
     double innerDiameter = outerDiameter - 2*thickness;        // Inner diameter (m)
     double E = 69e9;                     // Young's modulus for aluminum (Pa)
     double rho = 2700.0;                 // Density of aluminum (kg/m^3)
@@ -459,7 +482,7 @@ int main() {
     double I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
 
     int numElements = 40;               // Number of finite elements
-    double pointLoad = 10.0*4.448;           // Point load at the free end (N)
+    double pointLoad = 30.0 *4.448;           // Point load at the free end (lbs)
 
     std::cout << "Finite Element Analysis of a Hollow Aluminum Tube Cantilever" << std::endl;
     std::cout << "==========================================================" << std::endl;
@@ -488,7 +511,7 @@ int main() {
     std::cout << std::endl;
 
     // Time domain simulation for 0.5 seconds with 0.01s time step using RK4
-    //beam.simulateTimeDomainRK4(0.5, 0.01);
+    //beam.simulateTimeDomainRK4(10.0, 0.005);
 
     // Time domain simulation for 2 seconds with 0.01s time step
     beam.simulateTimeDomain(10.0, 0.05);
