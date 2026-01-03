@@ -4,6 +4,9 @@
 #include <Eigen/Dense>
 #include "opengl3.h"
 #include "heatmap.h"
+#include <cstdint>
+#include <thread>
+#include <chrono>
 
 
 #define M_PI 3.141592653589793238462643383
@@ -127,7 +130,9 @@ private:
     Eigen::MatrixXd globalStiffnessMatrix;
     Eigen::MatrixXd globalMassMatrix;
     Eigen::MatrixXd globalDampingMatrix;
+    Eigen::VectorXd forceVectorMag;
     Eigen::VectorXd forceVector;
+
 
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
@@ -154,7 +159,8 @@ public:
         int totalDOFs = 6 * (numElements + 1);
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
-        forceVector = Eigen::VectorXd::Zero(totalDOFs);
+        forceVectorMag = Eigen::VectorXd::Zero(totalDOFs);
+        forceVector = forceVectorMag;
 
         assembleGlobalMatrices();
         applyBoundaryConditions();
@@ -200,7 +206,64 @@ public:
         forceVector(base + 0) = endPointLoad(0);
         forceVector(base + 1) = endPointLoad(1);
         forceVector(base + 2) = endPointLoad(2);
+        forceVectorMag = forceVector;
     }
+
+
+
+
+    // Sleep for a given number of milliseconds (calls std::this_thread::sleep_for)
+    static inline void sleep_ms(std::uint64_t ms) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    }
+
+    // Monotonic time in milliseconds (use for elapsed-time measurements)
+    static inline std::uint64_t now_millis_steady() noexcept {
+        using namespace std::chrono;
+        return static_cast<std::uint64_t>(
+            duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count()
+            );
+    }
+
+    void sync(double dt)
+    {
+        static uint64_t last_run = 0;
+        const uint64_t interval_ms = (uint64_t) (dt*1000.0);
+        uint64_t now = now_millis_steady();
+        if (now - last_run < interval_ms) {
+            uint64_t naptime_ms = interval_ms-(now - last_run);
+            sleep_ms(naptime_ms);
+        }
+    }
+
+    void visualize(Eigen::VectorXd &u, int _numElements, double dt)
+    {
+        if (dt>0) sync(dt);
+        // visualize current state: reconstruct full displacement vector
+        int totalDOFs = 6 * (_numElements + 1);
+        int activeDOFs = totalDOFs - 6; // excluding fixed first node
+        Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
+        fullDisp.tail(activeDOFs) = u;
+
+        std::vector<LineSegment> lineSegments;
+        float sc = 1.8f / float(numElements + 1);
+        for (int n = 0; n < numElements; ++n) {
+            float x1 = sc * n - 0.9f + static_cast<float>(fullDisp(6 * n));
+            float x2 = sc * (n + 1) - 0.9f + static_cast<float>(fullDisp(6 * (n + 1)));
+            //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
+            //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
+            float y1 = 1.0f * static_cast<float>(fullDisp(6 * n + 1));
+            float y2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
+            double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
+            double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
+            double bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
+            double stress = abs(static_cast<float>(fullDisp(6 * n)) - static_cast<float>(fullDisp(6 * (n + 1)))) * 500.0;
+            RGB color = valueToHeatmapColor(bend + stress);
+            lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
+        }
+        graphics.draw(lineSegments);
+}
+
 
     void solveStaticDisplacement() {
         int totalDOFs = 6 * (numElements + 1);
@@ -229,22 +292,7 @@ public:
         }
 
         // Simple visualization: plot uy vs x
-        std::vector<LineSegment> lineSegments;
-        float sc = 1.8f / float(numElements + 1);
-        for (int n = 0; n < numElements; ++n) {
-            float x1 = sc * n - 0.9f;
-            float x2 = sc * (n + 1) - 0.9f;
-            float y1 = -1.0f * static_cast<float>(fullDisp(6 * n + 1)); // uy
-            float y2 = -1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
-
-            // curvature estimate from change in rotations about z and y
-            double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
-            double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
-            float bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
-            RGB color = valueToHeatmapColor(bend);
-            lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
-        }
-        graphics.draw(lineSegments);
+        visualize(displacements, numElements, -1);
     }
 
     void solveFrequencyAnalysis(int numModes) {
@@ -296,43 +344,49 @@ public:
         double beta_nb = 0.25;
         Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs); // displacement
         Eigen::VectorXd v = Eigen::VectorXd::Zero(activeDOFs); // velocity
-        Eigen::VectorXd a = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
+        Eigen::VectorXd acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
 
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
         Eigen::LLT<Eigen::MatrixXd> lltOfLHS(LHS);
 
         int numSteps = static_cast<int>(duration / timeStep);
-        for (int step = 0; step <= numSteps; ++step) {
-            // visualize current state: reconstruct full displacement vector
-            Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-            fullDisp.tail(activeDOFs) = u;
 
-            std::vector<LineSegment> lineSegments;
-            float sc = 1.8f / float(numElements + 1);
-            for (int n = 0; n < numElements; ++n) {
-                float x1 = sc * n - 0.9f;
-                float x2 = sc * (n + 1) - 0.9f;
-                float y1 = -1.0f * static_cast<float>(fullDisp(6 * n + 1));
-                float y2 = -1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
-                double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
-                double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
-                float bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
-                RGB color = valueToHeatmapColor(bend);
-                lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
-            }
-            graphics.draw(lineSegments);
+        for (int step = 0; step <= numSteps; ++step) {
+            double time = step * timeStep;
+
+            // --- Update time-varying forces here ---
+            double amp=1.0;
+            if (time < 10)
+                amp = sin(10 * time);
+            else if (time < 20)
+                amp = 1.0;
+            else
+                amp = 0;
+
+            int lastNode = numElements;
+            int base = 6 * lastNode;
+            forceVector(base + 0) = amp*endPointLoad(0);
+            forceVector(base + 1) = amp*endPointLoad(1);
+            forceVector(base + 2) = amp*endPointLoad(2);
+
+            Factive = forceVector.tail(activeDOFs);
+
+            // visualize current state: reconstruct full displacement vector
+            visualize(u, numElements, timeStep);
 
             // Newmark predictor
-            Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * a;
-            Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * a;
+            Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
+            Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
 
             Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
 
             Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
 
-            a = deltaA;
-            v = vPred + gamma * timeStep * a;
-            u = uPred + beta_nb * timeStep * timeStep * a;
+            acc = deltaA;
+            v = vPred + gamma * timeStep * acc;
+            u = uPred + beta_nb * timeStep * timeStep * acc;
+            //u[0] = sin(time);
+            //std::cout << u[1] << std::endl;
         }
     }
 };
@@ -345,13 +399,13 @@ int main() {
 
     // Hollow aluminum tube parameters
     double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)
-    double thickness = 0.25 / 39.37;              // 1/4" -> m
+    double thickness = 0.525 / 39.37;              // 1/4" -> m
     double outerDiameter = 8.0 / 39.37;           // 8" -> m
     double innerDiameter = outerDiameter - 2.0 * thickness;
     double E = 69e9;                              // Young's modulus for aluminum (Pa)
     double nu = 0.33;                             // Poisson's ratio
     double rho = 2700.0;                          // Density (kg/m^3)
-    double taper = 0.5;
+    double taper = 75./100.;
 
     double area = calculateHollowTubeArea(outerDiameter, innerDiameter);
     double I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
@@ -359,13 +413,15 @@ int main() {
 
     int numElements = 40;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d pointLoad(0.0, -30.0 * 4.44822, 0.0); // convert lbf to N and apply in Y
+    Eigen::Vector3d pointLoad( -300000.0 * 4.44822, 100.0, 0.0); // convert lbf to N and apply in Y
 
     std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     std::cout << "==========================================================" << std::endl;
     std::cout << "Beam length: " << length << " m" << std::endl;
-    std::cout << "Outer diameter: " << outerDiameter << " m" << std::endl;
-    std::cout << "Inner diameter: " << innerDiameter << " m" << std::endl;
+    std::cout << "Base Outer diameter: " << outerDiameter << " m" << std::endl;
+    std::cout << "Base Inner diameter: " << innerDiameter << " m" << std::endl;
+    std::cout << "End Outer diameter: " << outerDiameter*(1-taper) << " m" << std::endl;
+    std::cout << "End Inner diameter: " << innerDiameter*(1-taper) << " m" << std::endl;
     std::cout << "Cross-sectional area: " << area << " m^2" << std::endl;
     std::cout << "Moment of inertia (Iyy=Izz): " << I << " m^4" << std::endl;
     std::cout << "Polar moment approx J: " << J << " m^4" << std::endl;
@@ -378,7 +434,7 @@ int main() {
     CantileverBeam3D beam(length, E, nu, rho, area, numElements, pointLoad, outerDiameter, innerDiameter, taper);
 
     // Static analysis
-    //beam.solveStaticDisplacement();
+    beam.solveStaticDisplacement();
 
     std::cout << std::endl;
 
@@ -388,7 +444,7 @@ int main() {
     std::cout << std::endl;
 
     // Time domain simulation
-    beam.simulateTimeDomain(10.0, 0.05);
+    beam.simulateTimeDomain(60.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();
