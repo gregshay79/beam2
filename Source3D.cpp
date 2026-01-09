@@ -13,6 +13,9 @@
 
 mygraphics graphics;
 
+double thickness = 0.525 / 39.37;              // 1/4" -> m
+
+
 // Function to calculate moment of inertia for a hollow circular tube
 double calculateHollowTubeMomentOfInertia(double outerDiameter, double innerDiameter) {
     double outerRadius = outerDiameter / 2.0;
@@ -124,6 +127,7 @@ private:
     double area;             // Cross-sectional area (m^2)
     double Iyy, Izz, J;      // section properties
     int numElements;         // Number of finite elements
+    double baseOutd, IzzBase;
     Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
     std::vector<BeamElement3D> elements;
@@ -142,6 +146,7 @@ public:
         numElements(_numElements), endPointLoad(_endPointLoad) {
 
         double elementLength = length / numElements;
+        baseOutd = _outDia;
 
         // Build elements with tapered properties along the span
         for (int i = 0; i < numElements; ++i) {
@@ -150,6 +155,9 @@ public:
             double inD = _inDia * taper_factor;
             double A = calculateHollowTubeArea(outD, inD);
             double I = calculateHollowTubeMomentOfInertia(outD, inD); // Iyy == Izz for circular
+            if (i == 0) {
+                IzzBase = I;
+            }
             double Jp = 2.0 * I; // polar moment for circular tube Jp = Iyy + Izz = 2*I
             double G = E / (2.0 * (1.0 + nu));
             elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A);
@@ -279,10 +287,34 @@ public:
 
         std::cout << "Static Displacement Analysis Results (3D):" << std::endl;
         std::cout << "------------------------------------------" << std::endl;
+
+        std::cout << "Forces transferred at base:" << std::endl;
+        double unitLength = length / numElements;
+        double Fx = (fullDisp(6 * (1)) / unitLength) * E * area;
+        std::cout << "Fx:" << Fx << std::endl;
+        double uy1 = fullDisp(6 + 1);
+        double uy2 = fullDisp(6*2 + 1);
+        double Fy2 = E * IzzBase * (uy2 - 2 * uy1) / (length * pow(unitLength, 2));
+        double Fy = fullDisp(6 + 1) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6 + 5) / pow(unitLength, 2);
+        std::cout << "Fy:" << Fy << "(Izz=" << IzzBase << ")" << std::endl;
+        std::cout << "Fy2:" << Fy2  << std::endl;
+        double Fz = fullDisp(6 + 2) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6 + 4) / pow(unitLength, 2);
+        std::cout << "Fz:" << Fz << std::endl;
+        double Mz = 6*E*IzzBase*fullDisp(6 + 1)/pow(unitLength,2) + 4 * E * IzzBase*fullDisp(6+5)/unitLength;
+        std::cout << "Mz:" << Mz << std::endl;
+        Mz = E * IzzBase * fullDisp(6 + 5)/unitLength;
+        double My = E * IzzBase * fullDisp(6 + 4) / unitLength;
+        std::cout << "(method 2) My:" << My << std::endl;
+        std::cout << "(method 2) Mz:" << Mz << std::endl;
+        std::cout << std::endl;
+
         for (int n = 0; n <= numElements; ++n) {
             double pos = double(n) * (length / numElements);
             std::cout << "Node " << n << " (x = " << pos << " m):" << std::endl;
             std::cout << "  ux: " << fullDisp(6 * n + 0) << " m" << std::endl;
+            if (n<numElements)
+            std::cout << "  delta ux: " << fullDisp(6 * (n+1) + 0) - fullDisp(6 * n + 0) << " m" << std::endl;
+
             std::cout << "  uy: " << fullDisp(6 * n + 1) << " m" << std::endl;
             std::cout << "  uz: " << fullDisp(6 * n + 2) << " m" << std::endl;
             std::cout << "  rot_x: " << fullDisp(6 * n + 3) << " rad" << std::endl;
@@ -393,27 +425,30 @@ public:
 
 
 
+
 int main() {
 
     graphics.setupGL();
-
     // Hollow aluminum tube parameters
     double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)
-    double thickness = 0.525 / 39.37;              // 1/4" -> m
     double outerDiameter = 8.0 / 39.37;           // 8" -> m
     double innerDiameter = outerDiameter - 2.0 * thickness;
     double E = 69e9;                              // Young's modulus for aluminum (Pa)
     double nu = 0.33;                             // Poisson's ratio
     double rho = 2700.0;                          // Density (kg/m^3)
-    double taper = 75./100.;
+    double taper = 0;// 75. / 100.;
 
-    double area = calculateHollowTubeArea(outerDiameter, innerDiameter);
-    double I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
-    double J = 2.0 * I; // polar moment for circular tube
+    double area;
+    double I;
+    double J; // polar moment for circular tube
+
+    area = calculateHollowTubeArea(outerDiameter, innerDiameter);
+    I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
+    J = 2.0 * I; // polar moment for circular tube
 
     int numElements = 40;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d pointLoad( -300000.0 * 4.44822, 100.0, 0.0); // convert lbf to N and apply in Y
+    Eigen::Vector3d pointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
 
     std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     std::cout << "==========================================================" << std::endl;
@@ -422,7 +457,7 @@ int main() {
     std::cout << "Base Inner diameter: " << innerDiameter << " m" << std::endl;
     std::cout << "End Outer diameter: " << outerDiameter*(1-taper) << " m" << std::endl;
     std::cout << "End Inner diameter: " << innerDiameter*(1-taper) << " m" << std::endl;
-    std::cout << "Cross-sectional area: " << area << " m^2" << std::endl;
+    std::cout << "Base Cross-sectional area: " << area << " m^2" << std::endl;
     std::cout << "Moment of inertia (Iyy=Izz): " << I << " m^4" << std::endl;
     std::cout << "Polar moment approx J: " << J << " m^4" << std::endl;
     std::cout << "Young's modulus: " << E << " Pa" << std::endl;
@@ -444,7 +479,7 @@ int main() {
     std::cout << std::endl;
 
     // Time domain simulation
-    beam.simulateTimeDomain(60.0, 1/30.0);
+    //beam.simulateTimeDomain(60.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();
