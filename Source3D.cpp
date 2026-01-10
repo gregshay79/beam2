@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <vector>
 #include <cmath>
 #include <Eigen/Dense>
@@ -16,11 +16,9 @@ mygraphics graphics;
 double thickness = 0.525 / 39.37;              // 1/4" -> m
 
 
-// Function to calculate moment of inertia for a hollow circular tube
+// Function to calculate second moment of area for a hollow circular tube
 double calculateHollowTubeMomentOfInertia(double outerDiameter, double innerDiameter) {
-    double outerRadius = outerDiameter / 2.0;
-    double innerRadius = innerDiameter / 2.0;
-    return M_PI * (pow(outerRadius, 4) - pow(innerRadius, 4)) / 4.0;
+    return M_PI * (pow(outerDiameter, 4) - pow(innerDiameter, 4)) / 64.0;
 }
 
 // Function to calculate cross-sectional area for a hollow circular tube
@@ -273,6 +271,15 @@ public:
 }
 
 
+    //Option 4: Measure Curvature Directly
+    //    Instead of displacement, measure the curvature or strain at the base :
+    // M = EI⋅κ = EI⋅d2vdx2
+    // M = EI \cdot \kappa = EI \cdot \frac{ d ^ 2v }{dx ^ 2}
+    //    Then :
+
+    // Fy = dMdx
+    // F_y = \frac{ dM }{dx}
+
     void solveStaticDisplacement() {
         int totalDOFs = 6 * (numElements + 1);
         int activeDOFs = totalDOFs - 6; // excluding fixed first node
@@ -289,23 +296,36 @@ public:
         std::cout << "------------------------------------------" << std::endl;
 
         std::cout << "Forces transferred at base:" << std::endl;
-        double unitLength = length / numElements;
-        double Fx = (fullDisp(6 * (1)) / unitLength) * E * area;
+        int mp = 1;//measurement point
+        double unitLength = mp*length / numElements;
+        double Fx = (fullDisp(6*mp * (1)) / unitLength) * E * area;
         std::cout << "Fx:" << Fx << std::endl;
-        double uy1 = fullDisp(6 + 1);
-        double uy2 = fullDisp(6*2 + 1);
-        double Fy2 = E * IzzBase * (uy2 - 2 * uy1) / (length * pow(unitLength, 2));
-        double Fy = fullDisp(6 + 1) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6 + 5) / pow(unitLength, 2);
+        double uy1 = fullDisp(6*mp + 1);
+        double th_y1 = fullDisp(6*mp + 4); 
+        double th_z1 = fullDisp(6*mp + 5);
+        double uy2 = fullDisp(6*mp*2 + 1);
+        double uy3 = fullDisp(6 * mp * 3 + 1);
+        double ddy1 = uy1 / unitLength;
+        double ddy2 = (uy2 - uy1) / unitLength;
+        double ddy3 = (uy3 - uy2) / unitLength;
+        double ddysqr1 = (ddy2 - ddy1) / unitLength;
+        double ddysqr2 = (ddy3 - ddy2) / unitLength;
+        double mt = E * IzzBase * ddysqr1;
+        double Fy2 = E * IzzBase*(ddysqr2-ddysqr1)/unitLength;
+        double Ftest = E * IzzBase * (uy3 - 3 * uy2 + 3 * uy1) / pow(unitLength, 3);
+        //double Fy = uy1 * 12 * E * IzzBase / pow(length, 3) + 6*mp * E * IzzBase * th_z1 / pow(length, 2);
+        double Fy = 6 * E * IzzBase / pow(unitLength, 3) * (uy1 - unitLength * th_z1 / 2);
+        double m = E * IzzBase * (uy2 - 2 * uy1) / pow(unitLength, 2);
         std::cout << "Fy:" << Fy << "(Izz=" << IzzBase << ")" << std::endl;
         std::cout << "Fy2:" << Fy2  << std::endl;
-        double Fz = fullDisp(6 + 2) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6 + 4) / pow(unitLength, 2);
+        double Fz = fullDisp(6*mp + 2) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6*mp + 4) / pow(unitLength, 2);
         std::cout << "Fz:" << Fz << std::endl;
-        double Mz = 6*E*IzzBase*fullDisp(6 + 1)/pow(unitLength,2) + 4 * E * IzzBase*fullDisp(6+5)/unitLength;
-        std::cout << "Mz:" << Mz << std::endl;
-        Mz = E * IzzBase * fullDisp(6 + 5)/unitLength;
-        double My = E * IzzBase * fullDisp(6 + 4) / unitLength;
+        double Mz = 2 * E * IzzBase / pow(unitLength, 2) * (2 * th_z1 - 3 * uy1 / unitLength);
+        std::cout << "Mt:" << mt << std::endl;
+        double Mz2 = E * IzzBase * th_z1/unitLength; // curvature
+        double My = E * IzzBase * th_y1/unitLength; //curvature
         std::cout << "(method 2) My:" << My << std::endl;
-        std::cout << "(method 2) Mz:" << Mz << std::endl;
+        std::cout << "(method 2) Mz:" << Mz2 << std::endl;
         std::cout << std::endl;
 
         for (int n = 0; n <= numElements; ++n) {
@@ -436,7 +456,7 @@ int main() {
     double E = 69e9;                              // Young's modulus for aluminum (Pa)
     double nu = 0.33;                             // Poisson's ratio
     double rho = 2700.0;                          // Density (kg/m^3)
-    double taper = 0;// 75. / 100.;
+    double taper = .5;// 75. / 100.;
 
     double area;
     double I;
@@ -446,7 +466,7 @@ int main() {
     I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
     J = 2.0 * I; // polar moment for circular tube
 
-    int numElements = 40;
+    int numElements = 10;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
     Eigen::Vector3d pointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
 
