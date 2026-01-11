@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <vector>
 #include <cmath>
 
@@ -60,3 +60,70 @@ public:
 
 
 };
+
+class BeamElement3D {
+private:
+    double length;           // Element length (m)
+    double E;                // Young's modulus (Pa)
+    double G;                // Shear modulus (Pa)
+    double Iyy;              // Second moment about y (m^4)
+    double Izz;              // Second moment about z (m^4)
+    double J;                // Polar moment / torsional constant (m^4)
+    double rho;              // Density (kg/m^3)
+    double area;             // Cross-sectional area (m^2)
+
+public:
+    BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area);
+
+    Eigen::Matrix<double, 12, 12> getStiffnessMatrix() const;
+    Eigen::Matrix<double, 12, 12> getMassMatrix() const;
+
+};
+
+
+class CantileverBeam3D {
+private:
+    double length;           // Total beam length (m)
+    double E;                // Young's modulus (Pa)
+    double nu;               // Poisson's ratio
+    double rho;              // Density (kg/m^3)
+    double area;             // Cross-sectional area (m^2)
+    double Iyy, Izz, J;      // section properties
+    int numElements;         // Number of finite elements
+    double baseOutd, IzzBase;
+    Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
+
+    std::vector<BeamElement3D> elements;
+    Eigen::MatrixXd globalStiffnessMatrix;
+    Eigen::MatrixXd globalMassMatrix;
+    Eigen::MatrixXd globalDampingMatrix;
+    Eigen::VectorXd forceVectorMag;
+    Eigen::VectorXd forceVector;
+    Eigen::VectorXd u; // displacement
+    Eigen::VectorXd v; // velocity
+
+
+public:
+    CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
+        int _numElements, const Eigen::Vector3d& _endPointLoad,
+        double _outDia, double _inDia, double _taper);
+
+    void solveStaticDisplacement();
+    void setupTimeDomainSimulation(double _timeStep, double dampingRatio = 0.05);
+    void stepForward(double timeStep);
+    void visualize(openGLframe& graphics);
+    void solveFrequencyAnalysis(int numModes);
+    void draw(openGLframe& graphics);
+
+    void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
+
+    void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
+
+private:
+    void showOnScreen(openGLframe& graphics, double dt);
+    void applyLoads();
+    void applyBoundaryConditions();
+    void assembleGlobalMatrices();
+};
+
+CantileverBeam3D make_beam();
