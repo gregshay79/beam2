@@ -6,6 +6,7 @@
 #include "opengl3.h"
 #else
 #include "../opengl3.h"
+int beam2_init(openGLframe &graphics);
 #endif
 
 double calculateHollowTubeMomentOfInertia(double outerDiameter, double innerDiameter);

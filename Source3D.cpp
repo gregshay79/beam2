@@ -16,7 +16,6 @@
 
 #define M_PI 3.141592653589793238462643383
 
-openGLframe graphics;
 
 double thickness = 0.525 / 39.37;              // 1/4" -> m
 
@@ -247,7 +246,7 @@ public:
         }
     }
 
-    void visualize(Eigen::VectorXd &u, int _numElements, double dt)
+    void visualize(openGLframe& graphics, Eigen::VectorXd &u, int _numElements, double dt)
     {
         if (dt>0) sync(dt);
         // visualize current state: reconstruct full displacement vector
@@ -269,10 +268,12 @@ public:
             double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
             double bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
             double stress = abs(static_cast<float>(fullDisp(6 * n)) - static_cast<float>(fullDisp(6 * (n + 1)))) * 500.0;
-            RGB color = valueToHeatmapColor(bend + stress);
+            RGBi color = valueToHeatmapColor(bend + stress);
             lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
         }
+        graphics.CLS(RGBi(0,0,0));
         graphics.drawLines(lineSegments);
+        graphics.swap();
 }
 
 
@@ -285,7 +286,7 @@ public:
     // Fy = dMdx
     // F_y = \frac{ dM }{dx}
 
-    void solveStaticDisplacement() {
+    void solveStaticDisplacement(openGLframe& graphics) {
         int totalDOFs = 6 * (numElements + 1);
         int activeDOFs = totalDOFs - 6; // excluding fixed first node
 
@@ -349,7 +350,7 @@ public:
         }
 
         // Simple visualization: plot uy vs x
-        visualize(displacements, numElements, -1);
+        visualize(graphics, displacements, numElements, -1);
     }
 
     void solveFrequencyAnalysis(int numModes) {
@@ -370,7 +371,7 @@ public:
     }
 
     // Time integration (Newmark) simplified for 3D DOFs; uses lumped/approx mass so it's stable-ish.
-    void simulateTimeDomain(double duration, double timeStep, double dampingRatio = 0.05) {
+    void simulateTimeDomain(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05) {
         int totalDOFs = 6 * (numElements + 1);
         int activeDOFs = totalDOFs - 6;
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
@@ -429,7 +430,7 @@ public:
             Factive = forceVector.tail(activeDOFs);
 
             // visualize current state: reconstruct full displacement vector
-            visualize(u, numElements, timeStep);
+            visualize(graphics, u, numElements, timeStep);
 
             // Newmark predictor
             Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
@@ -452,11 +453,14 @@ public:
 
 #ifndef BEAM2_SUBMODULE
 int main()
+{
+    openGLframe graphics;
+    graphics.setupGL();
+
 #else
-int beam2_init()
+int beam2_init(openGLframe &graphics)
 #endif
 {
-    graphics.setupGL();
     // Hollow aluminum tube parameters
     double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)
     double outerDiameter = 8.0 / 39.37;           // 8" -> m
@@ -474,7 +478,7 @@ int beam2_init()
     I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
     J = 2.0 * I; // polar moment for circular tube
 
-    int numElements = 10;
+    int numElements = 40;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
     Eigen::Vector3d pointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
 
@@ -497,7 +501,7 @@ int beam2_init()
     CantileverBeam3D beam(length, E, nu, rho, area, numElements, pointLoad, outerDiameter, innerDiameter, taper);
 
     // Static analysis
-    beam.solveStaticDisplacement();
+    beam.solveStaticDisplacement(graphics);
 
     std::cout << std::endl;
 
@@ -507,7 +511,7 @@ int beam2_init()
     std::cout << std::endl;
 
     // Time domain simulation
-    //beam.simulateTimeDomain(60.0, 1/30.0);
+    //beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();
