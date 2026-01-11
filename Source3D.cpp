@@ -2,16 +2,21 @@
 #include <vector>
 #include <cmath>
 #include <Eigen/Dense>
-#include "opengl3.h"
-#include "heatmap.h"
 #include <cstdint>
 #include <thread>
 #include <chrono>
 
+#ifndef BEAM2_SUBMODULE
+#include "opengl3.h"
+#include "heatmap.h"
+#else
+#include "../opengl3.h"
+#include "../heatmap.h"
+#endif
 
 #define M_PI 3.141592653589793238462643383
 
-mygraphics graphics;
+openGLframe graphics;
 
 double thickness = 0.525 / 39.37;              // 1/4" -> m
 
@@ -267,7 +272,7 @@ public:
             RGB color = valueToHeatmapColor(bend + stress);
             lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
         }
-        graphics.draw(lineSegments);
+        graphics.drawLines(lineSegments);
 }
 
 
@@ -445,9 +450,12 @@ public:
 
 
 
-
-int main() {
-
+#ifndef BEAM2_SUBMODULE
+int main()
+#else
+int beam2_init()
+#endif
+{
     graphics.setupGL();
     // Hollow aluminum tube parameters
     double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)

@@ -21,7 +21,7 @@ const int WINDOW_HEIGHT = 600;
 
 
 
-class mygraphics
+class openGLframe
 {
 public:
     GLuint shaderProgramhandle;
@@ -29,7 +29,7 @@ public:
     GLFWwindow* window;
     void initLineSegments(std::vector<LineSegment>& _linesegments);
     int setupGL();
-    void draw(std::vector<LineSegment> _linesegments);
+    void drawLines(std::vector<LineSegment> _linesegments);
     void waitForCompletion();
     void closeGL();
 

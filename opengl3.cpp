@@ -25,7 +25,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
 
     // Initialize line segments for demonstration
-    void mygraphics::initLineSegments(std::vector<LineSegment> &_lineSegments) {
+    void openGLframe::initLineSegments(std::vector<LineSegment> &_lineSegments) {
         // Add some sample line segments with different colors
         _lineSegments.emplace_back(-0.8f, -0.8f, 0.8f, 0.8f, 1.0f, 0.0f, 0.0f);  // Red diagonal
         _lineSegments.emplace_back(0.8f, -0.8f, -0.8f, 0.8f, 0.0f, 1.0f, 0.0f);  // Green diagonal
@@ -40,7 +40,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         _lineSegments.emplace_back(-s, s, -s, -s, 1.0f, 0.5f, 0.0f);  // Left
     }
 
-    int mygraphics::setupGL() {
+    int openGLframe::setupGL() {
         // Initialize GLFW
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -197,7 +197,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         return 0;
     }
 
-    void mygraphics::draw(std::vector<LineSegment> _lineSegments)
+    void openGLframe::drawLines(std::vector<LineSegment> _lineSegments)
     {
 
         // Prepare vertex data for all line segments
@@ -255,14 +255,14 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     }
 
     // Poll for and process events
-    void mygraphics::waitForCompletion() {
+    void openGLframe::waitForCompletion() {
         while (!glfwWindowShouldClose(window)) {
 
             glfwPollEvents();
         }
     }
 
-    void mygraphics::closeGL()
+    void openGLframe::closeGL()
     {
         // Unbind VBOhandle and VAOhandle
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -281,7 +281,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
 //int main2()
 //{
-//    mygraphics graphics;
+//    openGLframe graphics;
 //
 //    graphics.setupGL();
 //
