@@ -135,11 +135,11 @@ public:
         int numDOFs = 2 * (numElements + 1);
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(numDOFs, numDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(numDOFs, numDOFs);
-        forceVector = Eigen::VectorXd::Zero(numDOFs);
+        //forceVector = Eigen::VectorXd::Zero(numDOFs);
 
         assembleGlobalMatrices();
         applyBoundaryConditions();
-        applyLoads();
+        //applyLoads();
     }
 
     void assembleGlobalMatrices() {
@@ -185,7 +185,7 @@ public:
         forceVector(lastNodeDOF) = pointLoad;
     }
 
-    void solveStaticDisplacement() {
+    void solveStaticDisplacement(Eigen::VectorXd& forceVector) {
         // Solve for static displacements: K * u = F
         // First, extract the active DOFs (excluding fixed DOFs at first node)
         int numDOFs = 2 * (numElements + 1) - 2;

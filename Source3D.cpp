@@ -120,30 +120,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         return M;
     }
 
-
-//class CantileverBeam3D {
-//private:
-//    double length;           // Total beam length (m)
-//    double E;                // Young's modulus (Pa)
-//    double nu;               // Poisson's ratio
-//    double rho;              // Density (kg/m^3)
-//    double area;             // Cross-sectional area (m^2)
-//    double Iyy, Izz, J;      // section properties
-//    int numElements;         // Number of finite elements
-//    double baseOutd, IzzBase;
-//    Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
-//
-//    std::vector<BeamElement3D> elements;
-//    Eigen::MatrixXd globalStiffnessMatrix;
-//    Eigen::MatrixXd globalMassMatrix;
-//    Eigen::MatrixXd globalDampingMatrix;
-//    Eigen::VectorXd forceVectorMag;
-//    Eigen::VectorXd forceVector;
-//    Eigen::VectorXd u; // displacement
-//    Eigen::VectorXd v; // velocity
-//
-//
-//public:
     CantileverBeam3D::CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
         int _numElements, const Eigen::Vector3d& _endPointLoad,
         double _outDia, double _inDia, double _taper)
@@ -173,12 +149,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         int totalDOFs = 6 * (numElements + 1);
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
-        forceVectorMag = Eigen::VectorXd::Zero(totalDOFs);
-        forceVector = forceVectorMag;
+        //Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
 
         assembleGlobalMatrices();
         applyBoundaryConditions();
-        applyLoads();
+        //applyEndpointLoad(endPointLoad);
     }
 
     void CantileverBeam3D::assembleGlobalMatrices() {
@@ -213,14 +188,15 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         }
     }
 
-    void CantileverBeam3D::applyLoads() {
+    Eigen::VectorXd CantileverBeam3D::applyEndpointLoad(Eigen::Vector3d endPointLoad) {
         // Apply the end point load at the last node translations (u_x,u_y,u_z)
         int lastNode = numElements;
         int base = 6 * lastNode;
-        forceVector(base + 0) = endPointLoad(0);
-        forceVector(base + 1) = endPointLoad(1);
-        forceVector(base + 2) = endPointLoad(2);
-        forceVectorMag = forceVector;
+        Eigen::VectorXd _forceVector = Eigen::VectorXd::Zero(totalDOFs);
+        _forceVector(base + 0) = endPointLoad(0);
+        _forceVector(base + 1) = endPointLoad(1);
+        _forceVector(base + 2) = endPointLoad(2);
+        return _forceVector;
     }
 
 
@@ -239,6 +215,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             );
     }
 
+    //wait until at least 'dt' time since the last sync call.
+    //If time is later than last+dt, go ahead immediately.
     void sync(double dt)
     {
         static uint64_t last_run = 0;
@@ -248,6 +226,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             uint64_t naptime_ms = interval_ms - (now - last_run);
             sleep_ms(naptime_ms);
         }
+        last_run = now;
     }
 
     //Just draw the beam
@@ -280,6 +259,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //graphics.swap();
     }
 
+    //show on screen.  If dt is given, synchronize screen refresh with dt.
     void CantileverBeam3D::showOnScreen(openGLframe& graphics, double dt)
     {
         if (dt > 0) sync(dt);
@@ -287,37 +267,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         draw(graphics);
         graphics.swap();
     }
-
-    //void CantileverBeam3D::visualize(openGLframe& graphics, Eigen::VectorXd& u, int _numElements, double dt)
-    //{
-    //    if (dt > 0) sync(dt);
-    //    // visualize current state: reconstruct full displacement vector
-    //    int totalDOFs = 6 * (_numElements + 1);
-    //    int activeDOFs = totalDOFs - 6; // excluding fixed first node
-    //    Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-    //    fullDisp.tail(activeDOFs) = u;
-
-    //    std::vector<LineSegment> lineSegments;
-    //    float sc = 1.8f / float(numElements + 1);
-    //    for (int n = 0; n < numElements; ++n) {
-    //        float x1 = sc * n - 0.9f + static_cast<float>(fullDisp(6 * n));
-    //        float x2 = sc * (n + 1) - 0.9f + static_cast<float>(fullDisp(6 * (n + 1)));
-    //        //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
-    //        //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
-    //        float y1 = 1.0f * static_cast<float>(fullDisp(6 * n + 1));
-    //        float y2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
-    //        double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
-    //        double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
-    //        double bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
-    //        double stress = abs(static_cast<float>(fullDisp(6 * n)) - static_cast<float>(fullDisp(6 * (n + 1)))) * 500.0;
-    //        RGBi color = valueToHeatmapColor(bend + stress);
-    //        lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
-    //    }
-    //    graphics.CLS(RGBi(0, 0, 0));
-    //    graphics.drawLines(lineSegments);
-    //    graphics.swap();
-    //}
-
 
     //Option 4: Measure Curvature Directly
     //    Instead of displacement, measure the curvature or strain at the base :
@@ -328,7 +277,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     // Fy = dMdx
     // F_y = \frac{ dM }{dx}
 
-    void CantileverBeam3D::solveStaticDisplacement() {
+    void CantileverBeam3D::solveStaticDisplacement(Eigen::VectorXd& forceVector) {
         int totalDOFs = 6 * (numElements + 1);
         int activeDOFs = totalDOFs - 6; // excluding fixed first node
 
@@ -398,7 +347,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     void CantileverBeam3D::visualize(openGLframe& graphics)
     {
         // Simple visualization: plot uy vs x
-        showOnScreen(graphics, -1);
+        showOnScreen(graphics); //unsynchronized
     }
 
     void CantileverBeam3D::solveFrequencyAnalysis(int numModes) {
@@ -418,21 +367,13 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         }
     }
 
-
-    int totalDOFs, activeDOFs;
-    Eigen::MatrixXd Kactive, Mactive, Factive, Cactive;
-    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
-    Eigen::VectorXd acc;
-    Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
-    double timeStep;
-
-
     void CantileverBeam3D::setupTimeDomainSimulation(double _timeStep, double dampingRatio)
     {
         totalDOFs = 6 * (numElements + 1);
         activeDOFs = totalDOFs - 6;
         Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
         Factive = forceVector.tail(activeDOFs);
         timeStep = _timeStep;
 
@@ -467,32 +408,31 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         lltOfLHS = Eigen::LLT<Eigen::MatrixXd>(LHS);
     }
 
-    void CantileverBeam3D::stepForward(double timeStep)
+/* test modifying forces 
+    // --- Update time-varying forces here ---
+    static int step = 0;
+    double time = step++ * timeStep;
+    double amp = 1.0;
+    if (time < 10)
+        amp = sin(10 * time);
+    else if (time < 20)
+        amp = 1.0;
+    else
+        amp = 0;
+
+    int lastNode = numElements;
+    int base = 6 * lastNode;
+    forceVector(base + 0) = amp * endPointLoad(0);
+    forceVector(base + 1) = amp * endPointLoad(1);
+    forceVector(base + 2) = amp * endPointLoad(2);
+
+*/
+    void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
     {
-        static int step = 0;
-        double time = step++ * timeStep;
         const double gamma = 0.5;
         const double beta_nb = 0.25;
 
-        // --- Update time-varying forces here ---
-        double amp = 1.0;
-        if (time < 10)
-            amp = sin(10 * time);
-        else if (time < 20)
-            amp = 1.0;
-        else
-            amp = 0;
-
-        int lastNode = numElements;
-        int base = 6 * lastNode;
-        forceVector(base + 0) = amp * endPointLoad(0);
-        forceVector(base + 1) = amp * endPointLoad(1);
-        forceVector(base + 2) = amp * endPointLoad(2);
-
         Factive = forceVector.tail(activeDOFs);
-
-        // visualize current state: reconstruct full displacement vector
-        //visualize(graphics, u, numElements, timeStep);
 
         // Newmark predictor
         Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
@@ -510,9 +450,24 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     void CantileverBeam3D::simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio)
     {
         setupTimeDomainSimulation(_timeStep, _dampingRatio);
+        Eigen::VectorXd forceVector = applyEndpointLoad(endPointLoad);
         int numSteps = static_cast<int>(duration / _timeStep);
         for (int step = 0; step <= numSteps; ++step) {
-            stepForward(_timeStep);
+            double time = step * timeStep;
+            double amp = 1.0;
+            if (time < 10)
+                amp = sin(10 * time);
+            else if (time < 20)
+                amp = 1.0;
+            else
+                amp = 0;
+
+            int lastNode = numElements;
+            int base = 6 * lastNode;
+            forceVector(base + 0) = amp * endPointLoad(0);
+            forceVector(base + 1) = amp * endPointLoad(1);
+            forceVector(base + 2) = amp * endPointLoad(2);
+            stepForward(_timeStep, forceVector);
             showOnScreen(graphics, _timeStep);
         }
     }
@@ -524,6 +479,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         int activeDOFs = totalDOFs - 6;
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::VectorXd forceVector = applyEndpointLoad(endPointLoad);
         Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
 
         // Rayleigh damping using two lowest modes (if available)
@@ -571,6 +527,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
             int lastNode = numElements;
             int base = 6 * lastNode;
+            //modify forcevector
             forceVector(base + 0) = amp * endPointLoad(0);
             forceVector(base + 1) = amp * endPointLoad(1);
             forceVector(base + 2) = amp * endPointLoad(2);
@@ -595,10 +552,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             //std::cout << u[1] << std::endl;
         }
     }
-
-
-
-
 
 CantileverBeam3D make_beam()
 {

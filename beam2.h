@@ -83,6 +83,7 @@ public:
 
 class CantileverBeam3D {
 private:
+    //Model definitions:
     double length;           // Total beam length (m)
     double E;                // Young's modulus (Pa)
     double nu;               // Poisson's ratio
@@ -91,37 +92,47 @@ private:
     double Iyy, Izz, J;      // section properties
     int numElements;         // Number of finite elements
     double baseOutd, IzzBase;
+
     Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
+    //Object state variables
     std::vector<BeamElement3D> elements;
     Eigen::MatrixXd globalStiffnessMatrix;
     Eigen::MatrixXd globalMassMatrix;
     Eigen::MatrixXd globalDampingMatrix;
-    Eigen::VectorXd forceVectorMag;
-    Eigen::VectorXd forceVector;
+//    Eigen::VectorXd forceVectorMag;
+//    Eigen::VectorXd forceVector;
     Eigen::VectorXd u; // displacement
     Eigen::VectorXd v; // velocity
 
+    //Simulation variables
+    int totalDOFs, activeDOFs;
+    Eigen::MatrixXd Kactive, Mactive, Factive, Cactive;
+    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
+    Eigen::VectorXd acc;
+    Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
+    double timeStep;
 
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
         int _numElements, const Eigen::Vector3d& _endPointLoad,
         double _outDia, double _inDia, double _taper);
 
-    void solveStaticDisplacement();
-    void setupTimeDomainSimulation(double _timeStep, double dampingRatio = 0.05);
-    void stepForward(double timeStep);
+    void solveStaticDisplacement(Eigen::VectorXd& forceVector);
+    void setupTimeDomainSimulation(double _timeStep,  double dampingRatio = 0.05);
+    void stepForward(double timeStep, Eigen::VectorXd& forceVector);
     void visualize(openGLframe& graphics);
     void solveFrequencyAnalysis(int numModes);
     void draw(openGLframe& graphics);
+    Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
+    int DOF() { return totalDOFs; }
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
     void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
 
 private:
-    void showOnScreen(openGLframe& graphics, double dt);
-    void applyLoads();
+    void showOnScreen(openGLframe& graphics, double dt= -1);
     void applyBoundaryConditions();
     void assembleGlobalMatrices();
 };
