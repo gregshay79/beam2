@@ -92,6 +92,7 @@ private:
     double Iyy, Izz, J;      // section properties
     int numElements;         // Number of finite elements
     double baseOutd, IzzBase;
+    double elementLength;
 
     Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
@@ -126,6 +127,7 @@ public:
     void draw(openGLframe& graphics);
     Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
     int DOF() { return totalDOFs; }
+    void setBaseOffset(Eigen::Vector3d _offset);
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 

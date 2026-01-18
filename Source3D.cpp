@@ -58,13 +58,17 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
         // Axial
         double EA_L = E * area / L;
-        K(0, 0) = EA_L; K(0, 6) = -EA_L;
-        K(6, 0) = -EA_L; K(6, 6) = EA_L;
+        K(0, 0) = EA_L; 
+        K(0, 6) = -EA_L;
+        K(6, 0) = -EA_L; 
+        K(6, 6) = EA_L;
 
         // Torsion
         double GJ_L = G * J / L;
-        K(3, 3) = GJ_L; K(3, 9) = -GJ_L;
-        K(9, 3) = -GJ_L; K(9, 9) = GJ_L;
+        K(3, 3) = GJ_L; 
+        K(3, 9) = -GJ_L;
+        K(9, 3) = -GJ_L; 
+        K(9, 9) = GJ_L;
 
         // Bending about z  -> transverse displacement in y (DOFs 1,5,7,11)
         double kyz = E * Izz / L3;
@@ -126,7 +130,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         : length(_length), E(_E), nu(_nu), rho(_rho), area(_area),
         numElements(_numElements), endPointLoad(_endPointLoad) {
 
-        double elementLength = length / numElements;
+        elementLength = length / numElements;
         baseOutd = _outDia;
 
         // Build elements with tapered properties along the span
@@ -229,6 +233,14 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         last_run = now;
     }
 
+    void CantileverBeam3D::setBaseOffset(Eigen::Vector3d _offset)
+    {
+        u(3+0) =  _offset(0);
+        u(3+1) =  _offset(1);
+        u(3+2) =  _offset(2);
+        u(6 + 1) = elementLength * sin(_offset(2));
+    }
+
     //Just draw the beam
     void CantileverBeam3D::draw(openGLframe& graphics)
     {
@@ -247,6 +259,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
             float y1 = 1.0f * static_cast<float>(fullDisp(6 * n + 1));
             float y2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
+
             double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
             double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
             double bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
@@ -404,7 +417,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
 
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
-        //Eigen::LLT<Eigen::MatrixXd> lltOfLHS(LHS);
         lltOfLHS = Eigen::LLT<Eigen::MatrixXd>(LHS);
     }
 
