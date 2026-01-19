@@ -113,6 +113,29 @@ private:
     Eigen::VectorXd acc;
     Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
     double timeStep;
+    
+    // Base motion state (6 DOFs: ux, uy, uz, rotx, roty, rotz)
+    Eigen::VectorXd u_base, v_base, acc_base;
+    
+    // Original coupling matrices (saved before boundary conditions zero them out)
+    Eigen::MatrixXd K_coupling_original;  // K(active_rows, base_cols) - original before BC
+    Eigen::MatrixXd M_coupling_original;   // M(active_rows, base_cols) - original before BC
+    Eigen::MatrixXd K_base_to_active_original;  // K(base_rows, active_cols) - original before BC
+    Eigen::MatrixXd M_base_to_active_original;   // M(base_rows, active_cols) - original before BC
+    Eigen::MatrixXd K_base_base_original;  // K(base_rows, base_cols) - original before BC
+    Eigen::MatrixXd M_base_base_original;   // M(base_rows, base_cols) - original before BC
+    
+    // Coupling matrices: forces on active DOFs due to base motion
+    Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
+    Eigen::MatrixXd C_coupling;  // C(active_rows, base_cols)
+    Eigen::MatrixXd M_coupling;   // M(active_rows, base_cols)
+    
+    // For computing reaction forces: forces on base due to active DOF motion
+    Eigen::MatrixXd K_base_to_active;  // K(base_rows, active_cols)
+    Eigen::MatrixXd C_base_to_active;  // C(base_rows, active_cols)
+    Eigen::MatrixXd M_base_to_active;   // M(base_rows, active_cols)
+    Eigen::MatrixXd K_base_base;  // K(base_rows, base_cols)
+    Eigen::MatrixXd M_base_base;   // M(base_rows, base_cols)
 
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
@@ -132,6 +155,18 @@ public:
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
     void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
+    
+    // Coupling interface for external simulation
+    void setBaseState(const Eigen::VectorXd& position, 
+                      const Eigen::VectorXd& velocity,
+                      const Eigen::VectorXd& acceleration);
+    
+    // Get reaction forces at base (6 DOFs: Fx, Fy, Fz, Mx, My, Mz)
+    Eigen::VectorXd getBaseReactionForces() const;
+    
+    // Step the beam forward with external base motion
+    void stepForwardWithBaseMotion(double timeStep, 
+                                   const Eigen::VectorXd& externalForces);
 
 private:
     void showOnScreen(openGLframe& graphics, double dt= -1);
