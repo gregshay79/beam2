@@ -19,6 +19,7 @@
 
 
 double thickness = 0.525 / 39.37;              // 1/4" -> m
+extern double mast_height;
 
 
 // Function to calculate second moment of area for a hollow circular tube
@@ -243,32 +244,38 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         last_run = now;
     }
 
-    void CantileverBeam3D::setBaseOffset(Eigen::Vector3d _offset)
-    {
-        u(3+0) =  _offset(0);
-        u(3+1) =  _offset(1);
-        u(3+2) =  _offset(2);
-        u(6 + 1) = elementLength * sin(_offset(2));
-    }
-
+    //void CantileverBeam3D::setBaseOffset(Eigen::Vector3d _offset)
+    //{
+    //    u(3+0) =  _offset(0);
+    //    u(3+1) =  _offset(1);
+    //    u(3+2) =  _offset(2);
+    //    u(6 + 1) = elementLength * sin(_offset(2));
+    //}
+    // 
     //Just draw the beam
     void CantileverBeam3D::draw(openGLframe& graphics)
     {
         // visualize current state: reconstruct full displacement vector
         int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6; // excluding fixed first node
+        int activeDOFs = totalDOFs - 6; // excluding fixed first node 0
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-        //fullDisp.tail(activeDOFs) = u;
+        fullDisp.tail(activeDOFs) = u; // u is of length ActiveDOF
+        fullDisp.head(6) = u_base;
 
         std::vector<LineSegment> lineSegments;
-        float sc = 1.8f / float(numElements + 1);
+        float sc = mast_height / float(numElements + 1);
         for (int n = 0; n < numElements; ++n) {
-            float x1 = sc * n - 0.9f + static_cast<float>(fullDisp(6 * n));
-            float x2 = sc * (n + 1) - 0.9f + static_cast<float>(fullDisp(6 * (n + 1)));
+            float y1 = (sc * n + static_cast<float>(fullDisp(6 * n))) ;
+            float y2 = (sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
             //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
             //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
-            float y1 = 1.0f * static_cast<float>(fullDisp(6 * n + 1));
-            float y2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1));
+            float x1 = (1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
+            float x2 = (1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
+
+            x1 = x1 * gxscale + goffset;
+            x2 = x2 * gxscale + goffset;
+            y1 = y1 * gyscale + goffset;
+            y2 = y2 * gyscale + goffset;
 
             double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
             double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
