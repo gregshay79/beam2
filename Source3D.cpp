@@ -260,17 +260,19 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         int activeDOFs = totalDOFs - 6; // excluding fixed first node 0
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
         fullDisp.tail(activeDOFs) = u; // u is of length ActiveDOF
-        fullDisp.head(6) = u_base;
+        //fullDisp.head(6) = base_root;
+        double xb = base_root(1);
+        double yb = base_root(0);
 
         std::vector<LineSegment> lineSegments;
         float sc = mast_height / float(numElements + 1);
         for (int n = 0; n < numElements; ++n) {
-            float y1 = (sc * n + static_cast<float>(fullDisp(6 * n))) ;
-            float y2 = (sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
+            float y1 = yb+(sc * n + static_cast<float>(fullDisp(6 * n))) ;
+            float y2 = yb+(sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
             //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
             //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
-            float x1 = (1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
-            float x2 = (1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
+            float x1 = xb+(1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
+            float x2 = xb+(1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
 
             x1 = x1 * gxscale + goffset;
             x2 = x2 * gxscale + goffset;
@@ -496,13 +498,20 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         u = uPred + beta_nb * timeStep * timeStep * acc;
     }
 
+    void CantileverBeam3D::setBaseRoot(const Eigen::VectorXd& position)
+    {
+        base_root = position;
+    }
+
     void CantileverBeam3D::setBaseState(const Eigen::VectorXd& position,
+                                        const Eigen::VectorXd& delta_position,
                                         const Eigen::VectorXd& velocity,
                                         const Eigen::VectorXd& acceleration)
     {
         // Input should be 6-element vectors: [ux, uy, uz, rotx, roty, rotz]
         if (position.size() == 6 && velocity.size() == 6 && acceleration.size() == 6) {
-            u_base = position;
+            base_root = position;
+            u_base = delta_position;
             v_base = velocity;
             acc_base = acceleration;
         }
@@ -518,13 +527,18 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Eigen::VectorXd F_base_motion = -K_coupling * u_base 
                                        - C_coupling * v_base 
                                        - M_coupling * acc_base;
+
+        double fx = F_base_motion(0);
+        double fy = F_base_motion(1);
+        double fz = F_base_motion(2);
         
         // Extract active DOF forces from external forces (externalForces is totalDOFs size)
         // Base DOFs (0-5) are ignored since base motion is prescribed separately
         Eigen::VectorXd F_external_active = externalForces.tail(activeDOFs);
         
+        
         // Combine external forces with base motion forces
-        Eigen::VectorXd F_total = F_external_active + F_base_motion;
+        Eigen::VectorXd F_total = F_external_active + F_base_motion ;;
         
         Factive = F_total;
         

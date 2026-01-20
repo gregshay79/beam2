@@ -115,6 +115,7 @@ private:
     double timeStep;
     
     // Base motion state (6 DOFs: ux, uy, uz, rotx, roty, rotz)
+    Eigen::VectorXd base_root;
     Eigen::VectorXd u_base, v_base, acc_base;
     
     // Original coupling matrices (saved before boundary conditions zero them out)
@@ -150,14 +151,15 @@ public:
     void draw(openGLframe& graphics);
     Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
     int DOF() { return totalDOFs; }
-    //void setBaseOffset(Eigen::Vector3d _offset);
+    void setBaseRoot(const Eigen::VectorXd& position);
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
     void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
     
     // Coupling interface for external simulation
-    void setBaseState(const Eigen::VectorXd& position, 
+    void setBaseState(const Eigen::VectorXd& position,
+                      const Eigen::VectorXd& delta_position, 
                       const Eigen::VectorXd& velocity,
                       const Eigen::VectorXd& acceleration);
     
