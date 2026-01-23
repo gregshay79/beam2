@@ -3,7 +3,7 @@
 #include <cmath>
 
 #ifndef BEAM2_SUBMODULE
-#include "opengl3.h"
+#include "../opengl3.h"
 #else
 #include "../opengl3.h"
 int beam2_init(openGLframe &graphics);
@@ -57,6 +57,8 @@ public:
     void applyLoads();
     void solveStaticDisplacement();
     void solveFrequencyAnalysis(int numModes);
+    Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
+
 
 
 };
@@ -170,8 +172,10 @@ public:
     void stepForwardWithBaseMotion(double timeStep, 
                                    const Eigen::VectorXd& externalForces);
 
+    void showOnScreen(openGLframe& graphics, double dt = -1);
+
+
 private:
-    void showOnScreen(openGLframe& graphics, double dt= -1);
     void applyBoundaryConditions();
     void assembleGlobalMatrices();
 };

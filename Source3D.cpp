@@ -8,10 +8,10 @@
 #include "beam2.h"
 
 #ifndef BEAM2_SUBMODULE
-#include "opengl3.h"
-#include "heatmap.h"
+//#include "../opengl3.h"
+#include "../heatmap.h"
 #else
-#include "../opengl3.h"
+//#include "../opengl3.h"
 #include "../heatmap.h"
 #endif
 
@@ -19,7 +19,7 @@
 
 
 double thickness = 0.525 / 39.37;              // 1/4" -> m
-extern double mast_height;
+//extern double mast_height;
 
 
 // Function to calculate second moment of area for a hollow circular tube
@@ -133,6 +133,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
         elementLength = length / numElements;
         baseOutd = _outDia;
+        base_root = Eigen::VectorXd::Zero(6);
 
         // Build elements with tapered properties along the span
         for (int i = 0; i < numElements; ++i) {
@@ -151,8 +152,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
 
         // Global DOFs: 6 per node
-        int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6;
+        totalDOFs = 6 * (numElements + 1);
+        activeDOFs = totalDOFs - 6;
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         //Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
@@ -265,19 +266,20 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         double yb = base_root(0);
 
         std::vector<LineSegment> lineSegments;
-        float sc = mast_height / float(numElements + 1);
+        //float sc = (float)mast_height / float(numElements + 1);
+        float sc = (float)length / float(numElements + 1);
         for (int n = 0; n < numElements; ++n) {
-            float y1 = yb+(sc * n + static_cast<float>(fullDisp(6 * n))) ;
-            float y2 = yb+(sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
+            float y1 = (float)yb+(sc * n + static_cast<float>(fullDisp(6 * n))) ;
+            float y2 = (float)yb+(sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
             //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
             //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
-            float x1 = xb+(1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
-            float x2 = xb+(1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
+            float x1 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
+            float x2 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
 
-            x1 = x1 * gxscale + goffset;
-            x2 = x2 * gxscale + goffset;
-            y1 = y1 * gyscale + goffset;
-            y2 = y2 * gyscale + goffset;
+            x1 = (float)(x1 * gxscale + goffset);
+            x2 = (float)(x2 * gxscale + goffset);
+            y1 = (float)(y1 * gyscale + goffset);
+            y2 = (float)(y2 * gyscale + goffset);
 
             double drot_y = fullDisp(6 * (n + 1) + 4) - fullDisp(6 * n + 4);
             double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
@@ -295,7 +297,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     void CantileverBeam3D::showOnScreen(openGLframe& graphics, double dt)
     {
         if (dt > 0) sync(dt);
-        graphics.CLS(RGBi(0, 0, 0));
+        graphics.CLS(RGBi{ 0, 0, 0 });
         draw(graphics);
         graphics.swap();
     }
@@ -340,19 +342,19 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         double ddy3 = (uy3 - uy2) / unitLength;
         double ddysqr1 = (ddy2 - ddy1) / unitLength;
         double ddysqr2 = (ddy3 - ddy2) / unitLength;
-        double mt = E * IzzBase * ddysqr1;
-        double Fy2 = E * IzzBase * (ddysqr2 - ddysqr1) / unitLength;
-        double Ftest = E * IzzBase * (uy3 - 3 * uy2 + 3 * uy1) / pow(unitLength, 3);
+        double mt = E * IzzBase * ddysqr1; //this is most accurate measure of momentum at base
+        double Fy2 = E * IzzBase * (ddysqr2 - ddysqr1) / unitLength; //This is most accurate measure of force
+        //double Ftest = E * IzzBase * (uy3 - 3 * uy2 + 3 * uy1) / pow(unitLength, 3);
         //double Fy = uy1 * 12 * E * IzzBase / pow(length, 3) + 6*mp * E * IzzBase * th_z1 / pow(length, 2);
-        double Fy = 6 * E * IzzBase / pow(unitLength, 3) * (uy1 - unitLength * th_z1 / 2);
-        double m = E * IzzBase * (uy2 - 2 * uy1) / pow(unitLength, 2);
-        std::cout << "Fy:" << Fy << "(Izz=" << IzzBase << ")" << std::endl;
+        //double Fy = 6 * E * IzzBase / pow(unitLength, 3) * (uy1 - unitLength * th_z1 / 2);
+        //double m = E * IzzBase * (uy2 - 2 * uy1) / pow(unitLength, 2);
+        //std::cout << "Fy:" << Fy << "(Izz=" << IzzBase << ")" << std::endl;
         std::cout << "Fy2:" << Fy2 << std::endl;
         double Fz = fullDisp(6 * mp + 2) * 12 * E * IzzBase / pow(unitLength, 3) + 6 * E * IzzBase * fullDisp(6 * mp + 4) / pow(unitLength, 2);
         std::cout << "Fz:" << Fz << std::endl;
         double Mz = 2 * E * IzzBase / pow(unitLength, 2) * (2 * th_z1 - 3 * uy1 / unitLength);
         std::cout << "Mt:" << mt << std::endl;
-        double Mz2 = E * IzzBase * th_z1 / unitLength; // curvature
+        double Mz2 = E * IzzBase * th_z1 / unitLength; // curvature method.  Close, but somewhat low.
         double My = E * IzzBase * th_y1 / unitLength; //curvature
         std::cout << "(method 2) My:" << My << std::endl;
         std::cout << "(method 2) Mz:" << Mz2 << std::endl;
@@ -528,9 +530,9 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
                                        - C_coupling * v_base 
                                        - M_coupling * acc_base;
 
-        double fx = F_base_motion(0);
-        double fy = F_base_motion(1);
-        double fz = F_base_motion(2);
+        //double fx = F_base_motion(0);
+        //double fy = F_base_motion(1);
+        //double fz = F_base_motion(2);
         
         // Extract active DOF forces from external forces (externalForces is totalDOFs size)
         // Base DOFs (0-5) are ignored since base motion is prescribed separately
@@ -564,7 +566,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Eigen::VectorXd F_reaction = Eigen::VectorXd::Zero(6);
         
         // Forces from base motion itself
-        F_reaction += K_base_base * u_base + M_base_base * acc_base;
+        //F_reaction += K_base_base * u_base + M_base_base * acc_base;
         
         // Forces from coupling to active DOFs
         F_reaction += K_base_to_active * u;
@@ -730,12 +732,16 @@ CantileverBeam3D make_beam()
 int main()
 {
     openGLframe graphics;
+    gxscale *= 0.8;
+    gyscale *= 0.8;
+    goffset = 0.0;
     graphics.setupGL();
 
 #else
 int beam2_init(openGLframe &graphics)
-#endif
 {
+#endif
+
     //// Hollow aluminum tube parameters
     //double length = 45.0 * 12.0 / 39.37;          // Length (ft -> m)
     //double outerDiameter = 8.0 / 39.37;           // 8" -> m
@@ -755,7 +761,7 @@ int beam2_init(openGLframe &graphics)
 
     //int numElements = 20;
     //// Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    //Eigen::Vector3d pointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
+    Eigen::Vector3d endPointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
 
     //std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     //std::cout << "==========================================================" << std::endl;
@@ -778,8 +784,10 @@ int beam2_init(openGLframe &graphics)
     CantileverBeam3D beam = make_beam();
 
     // Static analysis
-    //beam.solveStaticDisplacement();
-    //beam.showOnScreen(graphics);
+    Eigen::VectorXd forceVector = beam.applyEndpointLoad(endPointLoad);
+
+    beam.solveStaticDisplacement(forceVector);
+    beam.showOnScreen(graphics);
 
     std::cout << std::endl;
 
@@ -789,7 +797,7 @@ int beam2_init(openGLframe &graphics)
     std::cout << std::endl;
 
     // Time domain simulation
-    beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
+    //beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();

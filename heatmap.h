@@ -1,11 +1,13 @@
+#pragma once
+
 #include <iostream>
 #include <cmath>
 #include <algorithm>
 
-struct RGB {
+struct RGBi {
     unsigned char r;
     unsigned char g;
     unsigned char b;
 };
 
-RGB valueToHeatmapColor(double value);
+RGBi valueToHeatmapColor(double value);
