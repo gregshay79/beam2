@@ -761,7 +761,7 @@ int beam2_init(openGLframe &graphics)
 
     //int numElements = 20;
     //// Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d endPointLoad(  0, 100.0, 0.0); // convert lbf to N and apply in Y
+    Eigen::Vector3d endPointLoad(  0, 40000.0, 0.0); // convert lbf to N and apply in Y
 
     //std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     //std::cout << "==========================================================" << std::endl;
@@ -786,8 +786,8 @@ int beam2_init(openGLframe &graphics)
     // Static analysis
     Eigen::VectorXd forceVector = beam.applyEndpointLoad(endPointLoad);
 
-    beam.solveStaticDisplacement(forceVector);
-    beam.showOnScreen(graphics);
+    //beam.solveStaticDisplacement(forceVector);
+    //beam.showOnScreen(graphics);
 
     std::cout << std::endl;
 
@@ -797,7 +797,7 @@ int beam2_init(openGLframe &graphics)
     std::cout << std::endl;
 
     // Time domain simulation
-    //beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
+    beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();
