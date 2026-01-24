@@ -150,26 +150,24 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A);
         }
 
-
         // Global DOFs: 6 per node
         totalDOFs = 6 * (numElements + 1);
-        activeDOFs = totalDOFs - 6;
+        activeDOFs = totalDOFs;// -6;
+
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         //Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
 
         assembleGlobalMatrices();
+        //applyBoundaryConditions();
         
-        // Save original coupling matrices BEFORE applyBoundaryConditions() zeros them out
-        K_coupling_original = globalStiffnessMatrix.block(6, 0, activeDOFs, 6);
-        M_coupling_original = globalMassMatrix.block(6, 0, activeDOFs, 6);
-        K_base_to_active_original = globalStiffnessMatrix.block(0, 6, 6, activeDOFs);
-        M_base_to_active_original = globalMassMatrix.block(0, 6, 6, activeDOFs);
-        K_base_base_original = globalStiffnessMatrix.block(0, 0, 6, 6);
-        M_base_base_original = globalMassMatrix.block(0, 0, 6, 6);
+        K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
+        M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
+        //K_base_to_active_original = globalStiffnessMatrix.block(0, 6, 6, activeDOFs);
+        //M_base_to_active_original = globalMassMatrix.block(0, 6, 6, activeDOFs);
+        //K_base_base_original = globalStiffnessMatrix.block(0, 0, 6, 6);
+        //M_base_base_original = globalMassMatrix.block(0, 0, 6, 6);
         
-        applyBoundaryConditions();
-        //applyEndpointLoad(endPointLoad);
     }
 
     void CantileverBeam3D::assembleGlobalMatrices() {
@@ -257,8 +255,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     void CantileverBeam3D::draw(openGLframe& graphics)
     {
         // visualize current state: reconstruct full displacement vector
-        int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6; // excluding fixed first node 0
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
         fullDisp.tail(activeDOFs) = u; // u is of length ActiveDOF
         //fullDisp.head(6) = base_root;
@@ -312,9 +308,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     // F_y = \frac{ dM }{dx}
 
     void CantileverBeam3D::solveStaticDisplacement(Eigen::VectorXd& forceVector) {
-        int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6; // excluding fixed first node
-
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
 
@@ -385,8 +378,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     }
 
     void CantileverBeam3D::solveFrequencyAnalysis(int numModes) {
-        int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6;
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
 
@@ -403,20 +394,17 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
     void CantileverBeam3D::setupTimeDomainSimulation(double _timeStep, double dampingRatio)
     {
-        totalDOFs = 6 * (numElements + 1);
-        activeDOFs = totalDOFs - 6;
-        
         // Extract active submatrices
         Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         
         // Use original coupling matrices (saved before boundary conditions modified the matrix)
-        K_coupling = K_coupling_original;
-        M_coupling = M_coupling_original;
-        K_base_to_active = K_base_to_active_original;
-        M_base_to_active = M_base_to_active_original;
-        K_base_base = K_base_base_original;
-        M_base_base = M_base_base_original;
+        //K_coupling = K_coupling_original;
+        //M_coupling = M_coupling_original;
+        //K_base_to_active = K_base_to_active_original;
+        //M_base_to_active = M_base_to_active_original;
+        //K_base_base = K_base_base_original;
+        //M_base_base = M_base_base_original;
         
         // Initialize base state to zero
         u_base = Eigen::VectorXd::Zero(6);
@@ -429,26 +417,26 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
         // Rayleigh damping using two lowest modes (if available)
         //Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
-        solver.compute(Kactive, Mactive);
+        //solver.compute(Kactive, Mactive);
         double omega1 = 0.0, omega2 = 0.0;
-        if (solver.eigenvalues().size() >= 2) {
-            omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
-            omega2 = std::sqrt(std::max(0.0, solver.eigenvalues()(1)));
-        }
-        else if (solver.eigenvalues().size() == 1) {
-            omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
-            omega2 = 2.0 * omega1;
-        }
-        else {
+        //if (solver.eigenvalues().size() >= 2) {
+        //    omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
+        //    omega2 = std::sqrt(std::max(0.0, solver.eigenvalues()(1)));
+        //}
+        //else if (solver.eigenvalues().size() == 1) {
+        //    omega1 = std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
+        //    omega2 = 2.0 * omega1;
+        //}
+        //else {
             omega1 = 1.0; omega2 = 2.0;
-        }
+        //}
         double alpha = dampingRatio * 2.0 * omega1 * omega2 / (omega1 + omega2);
         double beta = dampingRatio * 2.0 / (omega1 + omega2);
         Cactive = alpha * Mactive + beta * Kactive;
         
         // Damping coupling matrices
         C_coupling = alpha * M_coupling + beta * K_coupling;
-        C_base_to_active = alpha * M_base_to_active + beta * K_base_to_active;
+        //C_base_to_active = alpha * M_base_to_active + beta * K_base_to_active;
 
         // Newmark parameters
         const double gamma = 0.5;
@@ -519,64 +507,64 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         }
     }
 
-    void CantileverBeam3D::stepForwardWithBaseMotion(double timeStep, 
-                                                      const Eigen::VectorXd& externalForces)
-    {
-        const double gamma = 0.5;
-        const double beta_nb = 0.25;
-        
-        // Compute forces on active DOFs due to base motion
-        Eigen::VectorXd F_base_motion = -K_coupling * u_base 
-                                       - C_coupling * v_base 
-                                       - M_coupling * acc_base;
+    //void CantileverBeam3D::stepForwardWithBaseMotion(double timeStep, 
+    //                                                  const Eigen::VectorXd& externalForces)
+    //{
+    //    const double gamma = 0.5;
+    //    const double beta_nb = 0.25;
+    //    
+    //    // Compute forces on active DOFs due to base motion
+    //    Eigen::VectorXd F_base_motion = -K_coupling * u_base 
+    //                                   - C_coupling * v_base 
+    //                                   - M_coupling * acc_base;
 
-        //double fx = F_base_motion(0);
-        //double fy = F_base_motion(1);
-        //double fz = F_base_motion(2);
-        
-        // Extract active DOF forces from external forces (externalForces is totalDOFs size)
-        // Base DOFs (0-5) are ignored since base motion is prescribed separately
-        Eigen::VectorXd F_external_active = externalForces.tail(activeDOFs);
-        
-        
-        // Combine external forces with base motion forces
-        Eigen::VectorXd F_total = F_external_active + F_base_motion ;;
-        
-        Factive = F_total;
-        
-        // Newmark integration (same as before)
-        Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
-        Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
-        
-        Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
-        Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
-        
-        acc = deltaA;
-        v = vPred + gamma * timeStep * acc;
-        u = uPred + beta_nb * timeStep * timeStep * acc;
-    }
+    //    //double fx = F_base_motion(0);
+    //    //double fy = F_base_motion(1);
+    //    //double fz = F_base_motion(2);
+    //    
+    //    // Extract active DOF forces from external forces (externalForces is totalDOFs size)
+    //    // Base DOFs (0-5) are ignored since base motion is prescribed separately
+    //    Eigen::VectorXd F_external_active = externalForces.tail(activeDOFs);
+    //    
+    //    
+    //    // Combine external forces with base motion forces
+    //    Eigen::VectorXd F_total = F_external_active + F_base_motion ;;
+    //    
+    //    Factive = F_total;
+    //    
+    //    // Newmark integration (same as before)
+    //    Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
+    //    Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
+    //    
+    //    Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+    //    Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+    //    
+    //    acc = deltaA;
+    //    v = vPred + gamma * timeStep * acc;
+    //    u = uPred + beta_nb * timeStep * timeStep * acc;
+    //}
 
-    Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
-    {
-        // Reaction forces = forces needed to maintain base motion
-        // F_reaction = K(base, base) * u_base + K(base, active) * u_active
-        //            + C(base, base) * v_base + C(base, active) * v_active  
-        //            + M(base, base) * acc_base + M(base, active) * acc_active
-        
-        Eigen::VectorXd F_reaction = Eigen::VectorXd::Zero(6);
-        
-        // Forces from base motion itself
-        //F_reaction += K_base_base * u_base + M_base_base * acc_base;
-        
-        // Forces from coupling to active DOFs
-        F_reaction += K_base_to_active * u;
-        F_reaction += M_base_to_active * acc;
-        
-        // Add damping coupling
-        F_reaction += C_base_to_active * v;
-        
-        return F_reaction;
-    }
+    //Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
+    //{
+    //    // Reaction forces = forces needed to maintain base motion
+    //    // F_reaction = K(base, base) * u_base + K(base, active) * u_active
+    //    //            + C(base, base) * v_base + C(base, active) * v_active  
+    //    //            + M(base, base) * acc_base + M(base, active) * acc_active
+    //    
+    //    Eigen::VectorXd F_reaction = Eigen::VectorXd::Zero(6);
+    //    
+    //    // Forces from base motion itself
+    //    //F_reaction += K_base_base * u_base + M_base_base * acc_base;
+    //    
+    //    // Forces from coupling to active DOFs
+    //    F_reaction += K_base_to_active * u;
+    //    F_reaction += M_base_to_active * acc;
+    //    
+    //    // Add damping coupling
+    //    F_reaction += C_base_to_active * v;
+    //    
+    //    return F_reaction;
+    //}
 
     void CantileverBeam3D::simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio)
     {
@@ -593,11 +581,27 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             else
                 amp = 0;
 
+            //amp = 0.0;
             int lastNode = numElements;
             int base = 6 * lastNode;
             forceVector(base + 0) = amp * endPointLoad(0);
             forceVector(base + 1) = amp * endPointLoad(1);
             forceVector(base + 2) = amp * endPointLoad(2);
+
+            //add a weak spring to hold the base at the origin
+            Eigen::Vector3d bs = u.head(3);
+            Eigen::Vector3d force = -1*bs.normalized();
+
+            double dist = bs.norm();
+            force *= 1000.0 * dist; //weak spring force
+
+            // add a damping force proportional to the square of thevelocity
+            Eigen::Vector3d vec = v.head(3);
+            double dampingForceMag = -100.0 * vec.squaredNorm();
+            force += dampingForceMag * vec.normalized();
+
+            forceVector.head(3) = force;
+
             stepForward(_timeStep, forceVector);
             showOnScreen(graphics, _timeStep);
         }
@@ -606,8 +610,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
     // Time integration (Newmark) simplified for 3D DOFs; uses lumped/approx mass so it's stable-ish.
     void CantileverBeam3D::simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio) {
-        int totalDOFs = 6 * (numElements + 1);
-        int activeDOFs = totalDOFs - 6;
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::VectorXd forceVector = applyEndpointLoad(endPointLoad);
