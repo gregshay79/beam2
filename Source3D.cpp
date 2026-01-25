@@ -136,7 +136,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         activeDOFs = totalDOFs;// -6;
         elementLength = length / numElements;
         baseOutd = _outDia;
-        //base_root = Eigen::VectorXd::Zero(6);
 
         x = Eigen::VectorXd::Zero(activeDOFs); // displacement
         v = Eigen::VectorXd::Zero(activeDOFs); // velocity
@@ -261,9 +260,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         // visualize current state: reconstruct full displacement vector
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
         fullDisp.tail(activeDOFs) = x; // u is of length ActiveDOF
-        //fullDisp.head(6) = base_root;
-        //double xb = base_root(1);
-        //double yb = base_root(0);
 
         std::vector<LineSegment> lineSegments;
         //float sc = (float)mast_height / float(numElements + 1);
@@ -520,7 +516,6 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     Eigen::VectorXd forceVector_body = forceVector;  // ADDED: force vector in body frame
 
     // Convert to body-fixed (relative) coordinates
-    //base_root = x.head(6);
     Eigen::Vector3d base_pos = x.head(3);
     Eigen::Vector3d base_rot = x.segment<3>(3);
     // Get base velocities and accelerations (from first node)
@@ -656,24 +651,6 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     //     }
     // }
 
-    //void CantileverBeam3D::setBaseRoot(const Eigen::VectorXd& position)
-    //{
-    //    base_root = position;
-    //}
-
-    //void CantileverBeam3D::setBaseState(const Eigen::VectorXd& position,
-    //                                    const Eigen::VectorXd& delta_position,
-    //                                    const Eigen::VectorXd& velocity,
-    //                                    const Eigen::VectorXd& acceleration)
-    //{
-    //    // Input should be 6-element vectors: [ux, uy, uz, rotx, roty, rotz]
-    //    if (position.size() == 6 && velocity.size() == 6 && acceleration.size() == 6) {
-    //        base_root = position;
-    //        u_base = delta_position;
-    //        v_base = velocity;
-    //        acc_base = acceleration;
-    //    }
-    //}
 
     //void CantileverBeam3D::stepForwardWithBaseMotion(double timeStep, 
     //                                                  const Eigen::VectorXd& externalForces)
