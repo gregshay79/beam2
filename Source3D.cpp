@@ -131,9 +131,16 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         : length(_length), E(_E), nu(_nu), rho(_rho), area(_area),
         numElements(_numElements), endPointLoad(_endPointLoad) {
 
+        // Global DOFs: 6 per node
+        totalDOFs = 6 * (numElements + 1);
+        activeDOFs = totalDOFs;// -6;
         elementLength = length / numElements;
         baseOutd = _outDia;
         base_root = Eigen::VectorXd::Zero(6);
+
+        x = Eigen::VectorXd::Zero(activeDOFs); // displacement
+        v = Eigen::VectorXd::Zero(activeDOFs); // velocity
+        acc = Eigen::VectorXd::Zero(activeDOFs); // velocity
 
         // Build elements with tapered properties along the span
         for (int i = 0; i < numElements; ++i) {
@@ -148,18 +155,15 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             double Jp = 2.0 * I; // polar moment for circular tube Jp = Iyy + Izz = 2*I
             double G = E / (2.0 * (1.0 + nu));
             elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A);
-        }
+            Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0);
+            x.segment<3>(i * 6) = undeformed_pos;
 
-        // Global DOFs: 6 per node
-        totalDOFs = 6 * (numElements + 1);
-        activeDOFs = totalDOFs;// -6;
+        }
 
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
-        //Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
 
         assembleGlobalMatrices();
-        //applyBoundaryConditions();
         
         K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
         M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
@@ -256,7 +260,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     {
         // visualize current state: reconstruct full displacement vector
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-        fullDisp.tail(activeDOFs) = u; // u is of length ActiveDOF
+        fullDisp.tail(activeDOFs) = x; // u is of length ActiveDOF
         //fullDisp.head(6) = base_root;
         double xb = base_root(1);
         double yb = base_root(0);
@@ -265,10 +269,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //float sc = (float)mast_height / float(numElements + 1);
         float sc = (float)length / float(numElements + 1);
         for (int n = 0; n < numElements; ++n) {
-            float y1 = (float)yb+(sc * n + static_cast<float>(fullDisp(6 * n))) ;
-            float y2 = (float)yb+(sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1)))) ;
-            //float x1 = 1.0f * static_cast<float>(fullDisp(6 * n ));
-            //float x2 = 1.0f * static_cast<float>(fullDisp(6 * (n + 1)));
+            //float y1 = (float)yb + (sc * n + static_cast<float>(fullDisp(6 * n)));
+            //float y2 = (float)yb + (sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1))));
+            float y1 = (float)yb + (static_cast<float>(fullDisp(6 * n)));
+            float y2 = (float)yb + (static_cast<float>(fullDisp(6 * (n + 1))));
+
             float x1 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
             float x2 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
 
@@ -312,6 +317,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
 
         //Eigen::VectorXd displacements = Kactive.colPivHouseholderQr().solve(Factive);
+        Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs);
         u = Kactive.colPivHouseholderQr().solve(Factive);
 
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
@@ -407,9 +413,9 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //M_base_base = M_base_base_original;
         
         // Initialize base state to zero
-        u_base = Eigen::VectorXd::Zero(6);
-        v_base = Eigen::VectorXd::Zero(6);
-        acc_base = Eigen::VectorXd::Zero(6);
+        //u_base = Eigen::VectorXd::Zero(6);
+        //v_base = Eigen::VectorXd::Zero(6);
+        //acc_base = Eigen::VectorXd::Zero(6);
         
         Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
         Factive = forceVector.tail(activeDOFs);
@@ -441,10 +447,12 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         // Newmark parameters
         const double gamma = 0.5;
         const double beta_nb = 0.25;
-        u = Eigen::VectorXd::Zero(activeDOFs); // displacement
+        //Note: positions x already computed in constructor
+        //u = Eigen::VectorXd::Zero(activeDOFs); // displacement
         v = Eigen::VectorXd::Zero(activeDOFs); // velocity
-        acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
-
+        //acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
+        acc = Eigen::VectorXd::Zero(activeDOFs);
+        
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
         lltOfLHS = Eigen::LLT<Eigen::MatrixXd>(LHS);
     }
@@ -468,44 +476,204 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     forceVector(base + 2) = amp * endPointLoad(2);
 
 */
-    void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
-    {
-        const double gamma = 0.5;
-        const double beta_nb = 0.25;
+// Helper: Convert small-angle rotations (rx, ry, rz) to rotation matrix
+// For large angles, use proper Euler angle conversion
+Eigen::Matrix3d rotationMatrixFromAngles(const Eigen::Vector3d& angles) {
+    double rx = angles(0);
+    double ry = angles(1);
+    double rz = angles(2);
+    
+    // ZYX Euler angles (commonly used in beam theory)
+    Eigen::Matrix3d Rx, Ry, Rz;
+    Rx << 1, 0, 0,
+          0, cos(rx), -sin(rx),
+          0, sin(rx), cos(rx);
+    
+    Ry << cos(ry), 0, sin(ry),
+          0, 1, 0,
+          -sin(ry), 0, cos(ry);
+    
+    Rz << cos(rz), -sin(rz), 0,
+          sin(rz), cos(rz), 0,
+          0, 0, 1;
+    
+    return Rz * Ry * Rx;  // Order matters for large angles
+}
 
-        Factive = forceVector.tail(activeDOFs);
+// Extract angles from rotation matrix (inverse operation)
+Eigen::Vector3d anglesFromRotationMatrix(const Eigen::Matrix3d& R) {
+    double ry = asin(-R(2,0));
+    double rx = atan2(R(2,1), R(2,2));
+    double rz = atan2(R(1,0), R(0,0));
+    return Eigen::Vector3d(rx, ry, rz);
+}
 
-        // Newmark predictor
-        Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
-        Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
+void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
+{
+    const double gamma = 0.5;
+    const double beta_nb = 0.25;
 
-        Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+    // Local storage for transformed variables: Transform all nodes to body-fixed frame
+    Eigen::VectorXd u_body = Eigen::VectorXd::Zero(activeDOFs);
+    Eigen::VectorXd v_body = v;
+    Eigen::VectorXd acc_body = acc;
+    Eigen::VectorXd forceVector_body = forceVector;  // ADDED: force vector in body frame
 
-        Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+    // Convert to body-fixed (relative) coordinates
+    base_root = x.head(6);
+    Eigen::Vector3d base_pos = base_root.head(3);
+    Eigen::Vector3d base_rot = base_root.tail(3);
+    // Get base velocities and accelerations (from first node)
+    Eigen::Vector3d base_vel_linear = v.segment<3>(0);
+    Eigen::Vector3d base_vel_angular = v.segment<3>(3);
+    Eigen::Vector3d base_acc_linear = acc.segment<3>(0);
+    Eigen::Vector3d base_acc_angular = acc.segment<3>(3);
 
-        acc = deltaA;
-        v = vPred + gamma * timeStep * acc;
-        u = uPred + beta_nb * timeStep * timeStep * acc;
+    Eigen::Matrix3d R_base = rotationMatrixFromAngles(base_rot);
+    Eigen::Matrix3d R_base_inv = R_base.transpose();  // Inverse rotation
+    
+    // Loop through all nodes and transform to body-fixed frame
+    for (int i = 0; i < numElements + 1; ++i) {
+        int idx = 6 * i;
+        
+        // Transform positions to body frame, then subtract undeformed position
+        Eigen::Vector3d pos_global = x.segment<3>(idx);
+        Eigen::Vector3d pos_relative = pos_global - base_pos;
+        Eigen::Vector3d pos_in_body_frame = R_base_inv * pos_relative;
+        
+        // Undeformed position in body frame (beam runs along x-axis)
+        Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0);
+        u_body.segment<3>(idx) = pos_in_body_frame - undeformed_pos;
+        
+        // Transform rotations (small angle approximation: simple subtraction)
+        Eigen::Vector3d rot_global = x.segment<3>(idx + 3);
+        u_body.segment<3>(idx + 3) = rot_global - base_rot;
+        
+        // Transform velocities - make relative to base THEN rotate
+        Eigen::Vector3d vel_relative = v.segment<3>(idx) - base_vel_linear;
+        v_body.segment<3>(idx) = R_base_inv * vel_relative;
+        
+        Eigen::Vector3d angvel_relative = v.segment<3>(idx + 3) - base_vel_angular;
+        v_body.segment<3>(idx + 3) = R_base_inv * angvel_relative;
+        
+        // Transform accelerations - make relative to base THEN rotate
+        Eigen::Vector3d acc_relative = acc.segment<3>(idx) - base_acc_linear;
+        acc_body.segment<3>(idx) = R_base_inv * acc_relative;
+        
+        Eigen::Vector3d angacc_relative = acc.segment<3>(idx + 3) - base_acc_angular;
+        acc_body.segment<3>(idx + 3) = R_base_inv * angacc_relative;
+        
+        // Transform forces and moments to body frame
+        Eigen::Vector3d force_global = forceVector.segment<3>(idx);
+        forceVector_body.segment<3>(idx) = R_base_inv * force_global;
+        
+        Eigen::Vector3d moment_global = forceVector.segment<3>(idx + 3);
+        forceVector_body.segment<3>(idx + 3) = R_base_inv * moment_global;
     }
+    
+    // Set base node to origin in body-fixed frame
+    if ((u_body.head(6).norm() > .01) || (v_body.head(6).norm() > .01) || (acc_body.head(6).norm() > 0.01)) {
+        printf("problem!\n");
+    }
+    //u_body.head(6).setZero(); //should already be 0
+    //v_body.head(6).setZero(); // should already be 0
+    //acc_body.head(6).setZero();//should already be 0
+
+    // Use transformed forces
+    Factive = forceVector_body.tail(activeDOFs);
+
+    // Newmark integration in body-fixed frame
+    Eigen::VectorXd uPred = u_body + timeStep * v_body + timeStep * timeStep * (0.5 - beta_nb) * acc_body;
+    Eigen::VectorXd vPred = v_body + timeStep * (1.0 - gamma) * acc_body;
+
+    Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+    Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+
+    acc_body = deltaA;
+    v_body = vPred + gamma * timeStep * acc_body;
+    u_body = uPred + beta_nb * timeStep * timeStep * acc_body;
+
+    // Transform back to global coordinates
+    for (int i = 0; i < numElements + 1; ++i) {
+        int idx = 6 * i;
+        
+        // Transform positions back: add undeformed position, rotate, then add base position
+        Eigen::Vector3d deformation_body = u_body.segment<3>(idx);
+        Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0);
+        Eigen::Vector3d pos_in_body_frame = deformation_body + undeformed_pos;
+        x.segment<3>(idx) = R_base * pos_in_body_frame + base_pos;
+        
+        // Transform rotations back (small angle approximation: simple addition)
+        Eigen::Vector3d rot_body = u_body.segment<3>(idx + 3);
+        x.segment<3>(idx + 3) = rot_body + base_rot;
+        
+        // Transform velocities back - rotate THEN add base velocity
+        Eigen::Vector3d vel_body = v_body.segment<3>(idx);
+        v.segment<3>(idx) = R_base * vel_body + base_vel_linear;
+        
+        Eigen::Vector3d angvel_body = v_body.segment<3>(idx + 3);
+        v.segment<3>(idx + 3) = R_base * angvel_body + base_vel_angular;
+        
+        // Transform accelerations back - rotate THEN add base acceleration
+        Eigen::Vector3d acc_body_linear = acc_body.segment<3>(idx);
+        acc.segment<3>(idx) = R_base * acc_body_linear + base_acc_linear;
+        
+        Eigen::Vector3d acc_body_angular = acc_body.segment<3>(idx + 3);
+        acc.segment<3>(idx + 3) = R_base * acc_body_angular + base_acc_angular;
+    }
+
+    
+}
+
+    // void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
+    // {
+    //     const double gamma = 0.5;
+    //     const double beta_nb = 0.25;
+
+    //     //convert to relative coordinates
+    //     base_root = u.head(6);
+    //     for (int i = 0; i < totalDOFs; i += 6) {
+    //         u.block(i,0,6, 1) -= base_root;
+    //     }
+
+    //     Factive = forceVector.tail(activeDOFs);
+
+    //     // Newmark predictor
+    //     Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
+    //     Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
+
+    //     Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+
+    //     Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+
+    //     acc = deltaA;
+    //     v = vPred + gamma * timeStep * acc;
+    //     u = uPred + beta_nb * timeStep * timeStep * acc;
+
+    //     //convert back to global coordinates
+    //     for (int i = 0; i < totalDOFs; i += 6) {
+    //         u.block(i,0,6,1) += base_root;
+    //     }
+    // }
 
     void CantileverBeam3D::setBaseRoot(const Eigen::VectorXd& position)
     {
         base_root = position;
     }
 
-    void CantileverBeam3D::setBaseState(const Eigen::VectorXd& position,
-                                        const Eigen::VectorXd& delta_position,
-                                        const Eigen::VectorXd& velocity,
-                                        const Eigen::VectorXd& acceleration)
-    {
-        // Input should be 6-element vectors: [ux, uy, uz, rotx, roty, rotz]
-        if (position.size() == 6 && velocity.size() == 6 && acceleration.size() == 6) {
-            base_root = position;
-            u_base = delta_position;
-            v_base = velocity;
-            acc_base = acceleration;
-        }
-    }
+    //void CantileverBeam3D::setBaseState(const Eigen::VectorXd& position,
+    //                                    const Eigen::VectorXd& delta_position,
+    //                                    const Eigen::VectorXd& velocity,
+    //                                    const Eigen::VectorXd& acceleration)
+    //{
+    //    // Input should be 6-element vectors: [ux, uy, uz, rotx, roty, rotz]
+    //    if (position.size() == 6 && velocity.size() == 6 && acceleration.size() == 6) {
+    //        base_root = position;
+    //        u_base = delta_position;
+    //        v_base = velocity;
+    //        acc_base = acceleration;
+    //    }
+    //}
 
     //void CantileverBeam3D::stepForwardWithBaseMotion(double timeStep, 
     //                                                  const Eigen::VectorXd& externalForces)
@@ -589,7 +757,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             forceVector(base + 2) = amp * endPointLoad(2);
 
             //add a weak spring to hold the base at the origin
-            Eigen::Vector3d bs = u.head(3);
+            Eigen::Vector3d bs = x.head(3);
             Eigen::Vector3d force = -1*bs.normalized();
 
             double dist = bs.norm();

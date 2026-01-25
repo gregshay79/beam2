@@ -105,7 +105,7 @@ private:
     Eigen::MatrixXd globalDampingMatrix;
 //    Eigen::VectorXd forceVectorMag;
 //    Eigen::VectorXd forceVector;
-    Eigen::VectorXd u; // displacement
+    Eigen::VectorXd x; // position
     Eigen::VectorXd v; // velocity
 
     //Simulation variables
@@ -118,7 +118,7 @@ private:
     
     // Base motion state (6 DOFs: ux, uy, uz, rotx, roty, rotz)
     Eigen::VectorXd base_root;
-    Eigen::VectorXd u_base, v_base, acc_base;
+    //Eigen::VectorXd u_base, v_base, acc_base;
     
     // Original coupling matrices (saved before boundary conditions zero them out)
     //Eigen::MatrixXd K_coupling_original;  // K(active_rows, base_cols) - original before BC
