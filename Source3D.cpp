@@ -136,7 +136,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         activeDOFs = totalDOFs;// -6;
         elementLength = length / numElements;
         baseOutd = _outDia;
-        base_root = Eigen::VectorXd::Zero(6);
+        //base_root = Eigen::VectorXd::Zero(6);
 
         x = Eigen::VectorXd::Zero(activeDOFs); // displacement
         v = Eigen::VectorXd::Zero(activeDOFs); // velocity
@@ -262,8 +262,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
         fullDisp.tail(activeDOFs) = x; // u is of length ActiveDOF
         //fullDisp.head(6) = base_root;
-        double xb = base_root(1);
-        double yb = base_root(0);
+        //double xb = base_root(1);
+        //double yb = base_root(0);
 
         std::vector<LineSegment> lineSegments;
         //float sc = (float)mast_height / float(numElements + 1);
@@ -271,11 +271,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         for (int n = 0; n < numElements; ++n) {
             //float y1 = (float)yb + (sc * n + static_cast<float>(fullDisp(6 * n)));
             //float y2 = (float)yb + (sc * (n + 1) + static_cast<float>(fullDisp(6 * (n + 1))));
-            float y1 = (float)yb + (static_cast<float>(fullDisp(6 * n)));
-            float y2 = (float)yb + (static_cast<float>(fullDisp(6 * (n + 1))));
+            float y1 = (static_cast<float>(fullDisp(6 * n)));
+            float y2 = (static_cast<float>(fullDisp(6 * (n + 1))));
 
-            float x1 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
-            float x2 = (float)xb+(1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
+            float x1 = (1.0f * static_cast<float>(fullDisp(6 * n + 1))) ;
+            float x2 = (1.0f * static_cast<float>(fullDisp(6 * (n + 1) + 1)));
 
             x1 = (float)(x1 * gxscale + goffset);
             x2 = (float)(x2 * gxscale + goffset);
@@ -520,9 +520,9 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     Eigen::VectorXd forceVector_body = forceVector;  // ADDED: force vector in body frame
 
     // Convert to body-fixed (relative) coordinates
-    base_root = x.head(6);
-    Eigen::Vector3d base_pos = base_root.head(3);
-    Eigen::Vector3d base_rot = base_root.tail(3);
+    //base_root = x.head(6);
+    Eigen::Vector3d base_pos = x.head(3);
+    Eigen::Vector3d base_rot = x.segment<3>(3);
     // Get base velocities and accelerations (from first node)
     Eigen::Vector3d base_vel_linear = v.segment<3>(0);
     Eigen::Vector3d base_vel_angular = v.segment<3>(3);
@@ -656,10 +656,10 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     //     }
     // }
 
-    void CantileverBeam3D::setBaseRoot(const Eigen::VectorXd& position)
-    {
-        base_root = position;
-    }
+    //void CantileverBeam3D::setBaseRoot(const Eigen::VectorXd& position)
+    //{
+    //    base_root = position;
+    //}
 
     //void CantileverBeam3D::setBaseState(const Eigen::VectorXd& position,
     //                                    const Eigen::VectorXd& delta_position,
