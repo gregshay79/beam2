@@ -286,7 +286,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             double drot_z = fullDisp(6 * (n + 1) + 5) - fullDisp(6 * n + 5);
             double bend = static_cast<float>(std::sqrt(drot_y * drot_y + drot_z * drot_z) * 1000.0);
             double stress = abs(static_cast<float>(fullDisp(6 * n)) - static_cast<float>(fullDisp(6 * (n + 1)))) * 500.0;
-            RGBi color = valueToHeatmapColor(bend + stress);
+            RGBi color = valueToHeatmapColor((bend /* + stress*/)/3.0 );
             lineSegments.emplace_back(x1, y1, x2, y2, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
         }
         //graphics.CLS(RGBi(0, 0, 0));
@@ -742,14 +742,14 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         for (int step = 0; step <= numSteps; ++step) {
             double time = step * timeStep;
             double amp = 1.0;
-            if (time < 10)
+            if (time < 20)
                 amp = sin(10 * time);
-            else if (time < 20)
+            else if (time < 40)
                 amp = 1.0;
             else
                 amp = 0;
 
-            //amp = 0.0;
+            amp *= 10;
             int lastNode = numElements;
             int base = 6 * lastNode;
             forceVector(base + 0) = amp * endPointLoad(0);
@@ -763,12 +763,20 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             double dist = bs.norm();
             force *= 1000.0 * dist; //weak spring force
 
-            // add a damping force proportional to the square of thevelocity
+            // add a damping force proportional to the square of the velocity
             Eigen::Vector3d vec = v.head(3);
-            double dampingForceMag = -100.0 * vec.squaredNorm();
+            double dampingForceMag = -10.0 * vec.squaredNorm();
             force += dampingForceMag * vec.normalized();
 
             forceVector.head(3) = force;
+
+            //Add a moment holding the base to angle 0
+            Eigen::Vector3d angle_vec = x.segment<3>(3);
+            double angle_mag = angle_vec.norm();
+            angle_vec.normalize();
+            Eigen::Vector3d righting_moment = -10000.0 * angle_mag * angle_vec;
+            forceVector.segment<3>(3) = righting_moment;
+
 
             stepForward(_timeStep, forceVector);
             showOnScreen(graphics, _timeStep);
