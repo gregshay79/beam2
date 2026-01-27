@@ -647,15 +647,17 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         for (int step = 0; step <= numSteps; ++step) {
             double time = step * timeStep;
             double amp = 1.0;
-            if (time < 20)
-                amp = sin(10 * time);
-            else if (time < 40)
-                amp = 1.0;
-            else
+            if (time < 40) {
+                amp = 5.0;
+                if (time < 20)
+                    amp = sin(2 * time);
+            }
+            else {
                 amp = 0;
+            }
 
-            amp *= 10;
-            int pushNode = numElements/2;
+            amp *= 20;
+            int pushNode = numElements / 2;
             int tip = 6 * pushNode;
             forceVector(tip + 0) = amp * endPointLoad(0);
             forceVector(tip + 1) = amp * endPointLoad(1);
@@ -663,24 +665,29 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
             //add a weak spring to hold the base at the origin
             Eigen::Vector3d bs = x.head(3);
-            Eigen::Vector3d force = -1*bs.normalized();
+            Eigen::Vector3d force = -1 * bs.normalized();
 
             double dist = bs.norm();
-            force *= 1000.0 * dist; //weak spring force
+            force *= 6000.0 * dist; //weak spring force
 
-            // add a damping force proportional to the velocity
+            // add a damping force proportional to the velocity of the base movement
             Eigen::Vector3d vec = v.head(3);
-            double dampingForceMag = -300.0 * vec.norm();
+            double dampingForceMag = -1000.0 * vec.norm();
             force += dampingForceMag * vec.normalized();
             forceVector.head(3) = force;
 
-            ////Add a force holding the base to 45degrees
-            Eigen::Vector3d goal_vec(elementLength, elementLength, 0.0);
+            ////Add a force holding the base to up
+            Eigen::Vector3d goal_vec(0, elementLength, 0.0);
             Eigen::Vector3d error_vec = goal_vec - x.segment<3>(6);
             double error_mag = error_vec.norm();
             error_vec.normalize();
             Eigen::Vector3d righting_force = 1000.0 * error_mag * error_vec;
-            //forceVector.segment<3>(6) = righting_force;
+            forceVector.segment<3>(6) = righting_force;
+
+            //Add a velocity damping force from the swinging motion
+            double swing_v_mag = v.segment<3>(6*numElements/2).norm(); //velocity of the midpoint
+            Eigen::Vector3d swing_damping = -300 * swing_v_mag * v.segment<3>(6*numElements / 2);
+            forceVector.segment<3>(6*numElements / 2) += swing_damping;
 
 
             stepForward(_timeStep, forceVector);
@@ -817,7 +824,7 @@ int main()
     openGLframe graphics;
     gxscale *= 0.8;
     gyscale *= 0.8;
-    goffset = -0.5;
+    goffset = -0.25;
     graphics.setupGL();
 
 #else
@@ -844,7 +851,7 @@ int beam2_init(openGLframe &graphics)
 
     //int numElements = 20;
     //// Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d endPointLoad(40000.0, 0, 0.0); // convert lbf to N and apply in Y
+    Eigen::Vector3d endPointLoad(0,40000.0, 0.0); // convert lbf to N and apply in Y
 
     //std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     //std::cout << "==========================================================" << std::endl;
@@ -880,7 +887,7 @@ int beam2_init(openGLframe &graphics)
     std::cout << std::endl;
 
     // Time domain simulation
-    beam.simulateTimeDomain(graphics, 60.0, 1/30.0);
+    beam.simulateTimeDomain(graphics, 300.0, 1/30.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();
