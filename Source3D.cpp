@@ -475,36 +475,41 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     forceVector(base + 2) = amp * endPointLoad(2);
 
 */
-// Helper: Convert small-angle rotations (rx, ry, rz) to rotation matrix
-// For large angles, use proper Euler angle conversion
-Eigen::Matrix3d rotationMatrixFromAngles(const Eigen::Vector3d& angles) {
-    double rx = angles(0);
-    double ry = angles(1);
-    double rz = angles(2);
-    
-    // ZYX Euler angles (commonly used in beam theory)
-    Eigen::Matrix3d Rx, Ry, Rz;
-    Rx << 1, 0, 0,
-          0, cos(rx), -sin(rx),
-          0, sin(rx), cos(rx);
-    
-    Ry << cos(ry), 0, sin(ry),
-          0, 1, 0,
-          -sin(ry), 0, cos(ry);
-    
-    Rz << cos(rz), -sin(rz), 0,
-          sin(rz), cos(rz), 0,
-          0, 0, 1;
-    
-    return Rz * Ry * Rx;  // Order matters for large angles
-}
 
-// Extract angles from rotation matrix (inverse operation)
-Eigen::Vector3d anglesFromRotationMatrix(const Eigen::Matrix3d& R) {
-    double ry = asin(-R(2,0));
-    double rx = atan2(R(2,1), R(2,2));
-    double rz = atan2(R(1,0), R(0,0));
-    return Eigen::Vector3d(rx, ry, rz);
+
+
+// Compute rotation matrix that rotates x-axis to align with given direction
+Eigen::Matrix3d rotationFromXAxisTo(const Eigen::Vector3d& direction) {
+    Eigen::Vector3d dir = direction.normalized();
+    Eigen::Vector3d x_axis(1, 0, 0);
+    
+    // If direction is already along x-axis, return identity
+    if ((dir - x_axis).norm() < 1e-6) {
+        return Eigen::Matrix3d::Identity();
+    }
+    
+    // If direction is opposite x-axis, rotate 180° around z
+    if ((dir + x_axis).norm() < 1e-6) {
+        Eigen::Matrix3d R;
+        R << -1, 0, 0,
+              0, -1, 0,
+              0, 0, 1;
+        return R;
+    }
+    
+    // General case: use Rodrigues' rotation formula
+    Eigen::Vector3d v = x_axis.cross(dir);  // rotation axis
+    double s = v.norm();                     // sin(angle)
+    double c = x_axis.dot(dir);              // cos(angle)
+    
+    Eigen::Matrix3d vx;  // skew-symmetric matrix of v
+    vx << 0, -v(2), v(1),
+          v(2), 0, -v(0),
+          -v(1), v(0), 0;
+    
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() + vx + vx * vx * ((1 - c) / (s * s));
+    
+    return R;
 }
 
 void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
@@ -512,113 +517,70 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     const double gamma = 0.5;
     const double beta_nb = 0.25;
 
-    // Local storage for transformed variables: Transform all nodes to body-fixed frame
-    Eigen::VectorXd u_body = Eigen::VectorXd::Zero(activeDOFs);
-    Eigen::VectorXd v_body = v;
-    Eigen::VectorXd acc_body = acc;
-    Eigen::VectorXd forceVector_body = forceVector;  // ADDED: force vector in body frame
-
-    // Convert to body-fixed (relative) coordinates
-    Eigen::Vector3d base_pos = x.head(3);
-    Eigen::Vector3d base_rot = x.segment<3>(3);
-    // Get base velocities and accelerations (from first node)
-    Eigen::Vector3d base_vel_linear = v.segment<3>(0);
-    Eigen::Vector3d base_vel_angular = v.segment<3>(3);
-    Eigen::Vector3d base_acc_linear = acc.segment<3>(0);
-    Eigen::Vector3d base_acc_angular = acc.segment<3>(3);
-
-    Eigen::Matrix3d R_base = rotationMatrixFromAngles(base_rot);
-    Eigen::Matrix3d R_base_inv = R_base.transpose();  // Inverse rotation
+    // Determine beam's current orientation from first element direction
+    Eigen::Vector3d node0_pos = x.segment<3>(0);
+    Eigen::Vector3d node1_pos = x.segment<3>(6);
+    Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
     
-    // Loop through all nodes and transform to body-fixed frame
+    // Compute rotation from reference (x-axis) to current beam direction
+    Eigen::Matrix3d R_beam = rotationFromXAxisTo(beam_direction);
+    Eigen::Matrix3d R_inv = R_beam.transpose();
+    
+    // Transform positions, velocities, and forces to beam-aligned frame
+    Eigen::VectorXd x_rot(activeDOFs);
+    Eigen::VectorXd v_rot = v;
+    Eigen::VectorXd acc_rot = acc;
+    Eigen::VectorXd f_rot = forceVector;
+    
     for (int i = 0; i < numElements + 1; ++i) {
         int idx = 6 * i;
+        // Rotate positions to beam frame
+        x_rot.segment<3>(idx) = R_inv * x.segment<3>(idx);
         
-        // Transform positions to body frame, then subtract undeformed position
-        Eigen::Vector3d pos_global = x.segment<3>(idx);
-        Eigen::Vector3d pos_relative = pos_global - base_pos;
-        Eigen::Vector3d pos_in_body_frame = R_base_inv * pos_relative;
+        // Transform rotations to beam-aligned frame (treat angles as vectors for small angles)
+        x_rot.segment<3>(idx + 3) = R_inv * x.segment<3>(idx + 3);
         
-        // Undeformed position in body frame (beam runs along x-axis)
-        u_body.segment<3>(idx) = pos_in_body_frame - ref_pos.segment<3>(idx);
-     
-        // Transform rotations (small angle approximation: simple subtraction)
-        Eigen::Vector3d rot_global = x.segment<3>(idx + 3);
-        u_body.segment<3>(idx + 3) = rot_global - base_rot;
+        // Rotate velocities and accelerations
+        v_rot.segment<3>(idx) = R_inv * v.segment<3>(idx);
+        acc_rot.segment<3>(idx) = R_inv * acc.segment<3>(idx);
         
-        // Transform velocities - make relative to base THEN rotate
-        Eigen::Vector3d vel_relative = v.segment<3>(idx) - base_vel_linear;
-        v_body.segment<3>(idx) = R_base_inv * vel_relative;
-        
-        Eigen::Vector3d angvel_relative = v.segment<3>(idx + 3) - base_vel_angular;
-        v_body.segment<3>(idx + 3) = R_base_inv * angvel_relative;
-        
-        // Transform accelerations - make relative to base THEN rotate
-        Eigen::Vector3d acc_relative = acc.segment<3>(idx) - base_acc_linear;
-        acc_body.segment<3>(idx) = R_base_inv * acc_relative;
-        
-        Eigen::Vector3d angacc_relative = acc.segment<3>(idx + 3) - base_acc_angular;
-        acc_body.segment<3>(idx + 3) = R_base_inv * angacc_relative;
-        
-        // Transform forces and moments to body frame
-        Eigen::Vector3d force_global = forceVector.segment<3>(idx);
-        forceVector_body.segment<3>(idx) = R_base_inv * force_global;
-        
-        Eigen::Vector3d moment_global = forceVector.segment<3>(idx + 3);
-        forceVector_body.segment<3>(idx + 3) = R_base_inv * moment_global;
+        // Rotate forces and moments
+        f_rot.segment<3>(idx) = R_inv * forceVector.segment<3>(idx);
+        f_rot.segment<3>(idx + 3) = R_inv * forceVector.segment<3>(idx + 3);
     }
     
-    // Set base node to origin in body-fixed frame
-    if ((u_body.head(6).norm() > .01) || (v_body.head(6).norm() > .01) || (acc_body.head(6).norm() > 0.01)) {
-        printf("problem!\n");
-    }
-    //u_body.head(6).setZero(); //should already be 0
-    //v_body.head(6).setZero(); // should already be 0
-    //acc_body.head(6).setZero();//should already be 0
-
-    // Use transformed forces
-    Factive = forceVector_body.tail(activeDOFs);
-
-    // Newmark integration in body-fixed frame
-    Eigen::VectorXd uPred = u_body + timeStep * v_body + timeStep * timeStep * (0.5 - beta_nb) * acc_body;
-    Eigen::VectorXd vPred = v_body + timeStep * (1.0 - gamma) * acc_body;
-
+    // NOW compute displacement in beam-aligned frame
+    Eigen::VectorXd u_rot = x_rot - ref_pos;
+    
+    Factive = f_rot.tail(activeDOFs);
+    
+    // Newmark integration in beam-aligned frame (where stiffness matrix is correct)
+    Eigen::VectorXd uPred = u_rot + timeStep * v_rot + timeStep * timeStep * (0.5 - beta_nb) * acc_rot;
+    Eigen::VectorXd vPred = v_rot + timeStep * (1.0 - gamma) * acc_rot;
+    
     Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
     Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
-
-    acc_body = deltaA;
-    v_body = vPred + gamma * timeStep * acc_body;
-    u_body = uPred + beta_nb * timeStep * timeStep * acc_body;
-
-    // Transform back to global coordinates
+    
+    acc_rot = deltaA;
+    v_rot = vPred + gamma * timeStep * acc_rot;
+    u_rot = uPred + beta_nb * timeStep * timeStep * acc_rot;
+    
+    // Compute positions in beam frame from displacements
+    Eigen::VectorXd x_rot_new = ref_pos + u_rot;
+    
+    // Transform back to global frame
     for (int i = 0; i < numElements + 1; ++i) {
         int idx = 6 * i;
+        // Rotate positions back
+        x.segment<3>(idx) = R_beam * x_rot_new.segment<3>(idx);
         
-        // Transform positions back: add undeformed position, rotate, then add base position
-        Eigen::Vector3d deformation_body = u_body.segment<3>(idx);
-        Eigen::Vector3d pos_in_body_frame = deformation_body + ref_pos.segment<3>(idx);
-        x.segment<3>(idx) = R_base * pos_in_body_frame + base_pos;
+        // Transform rotations back to global frame
+        x.segment<3>(idx + 3) = R_beam * x_rot_new.segment<3>(idx + 3);
         
-        // Transform rotations back (small angle approximation: simple addition)
-        Eigen::Vector3d rot_body = u_body.segment<3>(idx + 3);
-        x.segment<3>(idx + 3) = rot_body + base_rot;
-        
-        // Transform velocities back - rotate THEN add base velocity
-        Eigen::Vector3d vel_body = v_body.segment<3>(idx);
-        v.segment<3>(idx) = R_base * vel_body + base_vel_linear;
-        
-        Eigen::Vector3d angvel_body = v_body.segment<3>(idx + 3);
-        v.segment<3>(idx + 3) = R_base * angvel_body + base_vel_angular;
-        
-        // Transform accelerations back - rotate THEN add base acceleration
-        Eigen::Vector3d acc_body_linear = acc_body.segment<3>(idx);
-        acc.segment<3>(idx) = R_base * acc_body_linear + base_acc_linear;
-        
-        Eigen::Vector3d acc_body_angular = acc_body.segment<3>(idx + 3);
-        acc.segment<3>(idx + 3) = R_base * acc_body_angular + base_acc_angular;
+        // Rotate velocities and accelerations back
+        v.segment<3>(idx) = R_beam * v_rot.segment<3>(idx);
+        acc.segment<3>(idx) = R_beam * acc_rot.segment<3>(idx);
     }
-
-    
 }
 
     // void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
@@ -706,11 +668,11 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             double dist = bs.norm();
             force *= 1000.0 * dist; //weak spring force
 
-            // add a damping force proportional to the square of the velocity
+            // add a damping force proportional to the velocity
             Eigen::Vector3d vec = v.head(3);
-            double dampingForceMag = -10.0 * vec.squaredNorm();
+            double dampingForceMag = -300.0 * vec.norm();
             force += dampingForceMag * vec.normalized();
-            //forceVector.head(3) = force;
+            forceVector.head(3) = force;
 
             ////Add a force holding the base to 45degrees
             Eigen::Vector3d goal_vec(elementLength, elementLength, 0.0);
@@ -855,7 +817,7 @@ int main()
     openGLframe graphics;
     gxscale *= 0.8;
     gyscale *= 0.8;
-    goffset = 0.0;
+    goffset = -0.5;
     graphics.setupGL();
 
 #else
