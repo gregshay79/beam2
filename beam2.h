@@ -106,6 +106,7 @@ private:
 //    Eigen::VectorXd forceVectorMag;
 //    Eigen::VectorXd forceVector;
     Eigen::VectorXd x; // position
+    Eigen::VectorXd ref_pos; // reference position
     Eigen::VectorXd v; // velocity
 
     //Simulation variables
