@@ -126,10 +126,9 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     }
 
     CantileverBeam3D::CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
-        int _numElements, const Eigen::Vector3d& _endPointLoad,
-        double _outDia, double _inDia, double _taper)
+        int _numElements, double _outDia, double _inDia, double _taper)
         : length(_length), E(_E), nu(_nu), rho(_rho), area(_area),
-        numElements(_numElements), endPointLoad(_endPointLoad) {
+        numElements(_numElements) {
 
         // Global DOFs: 6 per node
         totalDOFs = 6 * (numElements + 1);
@@ -164,10 +163,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         ref_pos.segment<3>(i * 6) = undeformed_pos;
 
         //Now set initial position of nodes of beam
+        double angle = 5.0*M_PI/180.0;
         for (i = 0; i < numElements + 1; ++i) {
 //            x.segment<3>(i * 6) = Eigen::Vector3d(0.0, i * elementLength, 0);
 //            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/2);
-            x.segment<3>(i * 6) = Eigen::Vector3d(.707*i * elementLength,.707*i * elementLength, 0);
+            x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle)*i * elementLength,cos(angle)*i * elementLength, 0);
             x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/4);
         }
 
@@ -217,16 +217,16 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         }
     }
 
-    Eigen::VectorXd CantileverBeam3D::applyEndpointLoad(Eigen::Vector3d endPointLoad) {
-        // Apply the end point load at the last node translations (u_x,u_y,u_z)
-        int lastNode = numElements;
-        int base = 6 * lastNode;
-        Eigen::VectorXd _forceVector = Eigen::VectorXd::Zero(totalDOFs);
-        _forceVector(base + 0) = endPointLoad(0);
-        _forceVector(base + 1) = endPointLoad(1);
-        _forceVector(base + 2) = endPointLoad(2);
-        return _forceVector;
-    }
+    //Eigen::VectorXd CantileverBeam3D::applyEndpointLoad(Eigen::Vector3d endPointLoad) {
+    //    // Apply the end point load at the last node translations (u_x,u_y,u_z)
+    //    int lastNode = numElements;
+    //    int base = 6 * lastNode;
+    //    Eigen::VectorXd _forceVector = Eigen::VectorXd::Zero(totalDOFs);
+    //    _forceVector(base + 0) = endPointLoad(0);
+    //    _forceVector(base + 1) = endPointLoad(1);
+    //    _forceVector(base + 2) = endPointLoad(2);
+    //    return _forceVector;
+    //}
 
 
 
@@ -444,8 +444,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //C_base_to_active = alpha * M_base_to_active + beta * K_base_to_active;
 
         // Newmark parameters
-        const double gamma = 0.5;
-        const double beta_nb = 0.25;
+        gamma = 0.5;
+        beta_nb = 0.25;
         //Note: positions x already computed in constructor
         //u = Eigen::VectorXd::Zero(activeDOFs); // displacement
         v = Eigen::VectorXd::Zero(activeDOFs); // velocity
@@ -455,28 +455,6 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
         lltOfLHS = Eigen::LLT<Eigen::MatrixXd>(LHS);
     }
-
-/* test modifying forces 
-    // --- Update time-varying forces here ---
-    static int step = 0;
-    double time = step++ * timeStep;
-    double amp = 1.0;
-    if (time < 10)
-        amp = sin(10 * time);
-    else if (time < 20)
-        amp = 1.0;
-    else
-        amp = 0;
-
-    int lastNode = numElements;
-    int base = 6 * lastNode;
-    forceVector(base + 0) = amp * endPointLoad(0);
-    forceVector(base + 1) = amp * endPointLoad(1);
-    forceVector(base + 2) = amp * endPointLoad(2);
-
-*/
-
-
 
 // Compute rotation matrix that rotates x-axis to align with given direction
 Eigen::Matrix3d rotationFromXAxisTo(const Eigen::Vector3d& direction) {
@@ -514,9 +492,6 @@ Eigen::Matrix3d rotationFromXAxisTo(const Eigen::Vector3d& direction) {
 
 void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
 {
-    const double gamma = 0.5;
-    const double beta_nb = 0.25;
-
     // Determine beam's current orientation from first element direction
     Eigen::Vector3d node0_pos = x.segment<3>(0);
     Eigen::Vector3d node1_pos = x.segment<3>(6);
@@ -585,8 +560,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
     // void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
     // {
-    //     const double gamma = 0.5;
-    //     const double beta_nb = 0.25;
+
 
     //     //convert to relative coordinates
     //     base_root = u.head(6);
@@ -641,7 +615,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     void CantileverBeam3D::simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio)
     {
         setupTimeDomainSimulation(_timeStep, _dampingRatio);
-        //applyEndpointLoad(endPointLoad);
+        Eigen::Vector3d pointLoad = { 100,0,0 };
         Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
         int numSteps = static_cast<int>(duration / _timeStep);
         for (int step = 0; step <= numSteps; ++step) {
@@ -657,36 +631,37 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             }
 
             amp *= 20;
-            int pushNode = numElements / 2;
-            int tip = 6 * pushNode;
-            forceVector(tip + 0) = amp * endPointLoad(0);
-            forceVector(tip + 1) = amp * endPointLoad(1);
-            forceVector(tip + 2) = amp * endPointLoad(2);
+            int pushedNode = numElements / 2;
+            int tip = 6 * pushedNode;
+            forceVector.segment<3>(tip) = amp * pointLoad;
+            //forceVector(tip + 0) = amp * pointLoad(0);
+            //forceVector(tip + 1) = amp * pointLoad(1);
+            //forceVector(tip + 2) = amp * pointLoad(2);
 
             //add a weak spring to hold the base at the origin
             Eigen::Vector3d bs = x.head(3);
             Eigen::Vector3d force = -1 * bs.normalized();
 
             double dist = bs.norm();
-            force *= 6000.0 * dist; //weak spring force
+            force *= 50000.0 * dist; //base spring force
 
             // add a damping force proportional to the velocity of the base movement
             Eigen::Vector3d vec = v.head(3);
-            double dampingForceMag = -1000.0 * vec.norm();
+            double dampingForceMag = -100.0 * vec.norm();
             force += dampingForceMag * vec.normalized();
             forceVector.head(3) = force;
 
-            ////Add a force holding the base to up
+            ////Add a force holding the base to upright position
             Eigen::Vector3d goal_vec(0, elementLength, 0.0);
             Eigen::Vector3d error_vec = goal_vec - x.segment<3>(6);
             double error_mag = error_vec.norm();
             error_vec.normalize();
-            Eigen::Vector3d righting_force = 1000.0 * error_mag * error_vec;
+            Eigen::Vector3d righting_force = 50000.0 * error_mag * error_vec;
             forceVector.segment<3>(6) = righting_force;
 
             //Add a velocity damping force from the swinging motion
             double swing_v_mag = v.segment<3>(6*numElements/2).norm(); //velocity of the midpoint
-            Eigen::Vector3d swing_damping = -300 * swing_v_mag * v.segment<3>(6*numElements / 2);
+            Eigen::Vector3d swing_damping =  -100 * swing_v_mag * v.segment<3>(6 * numElements / 2);
             forceVector.segment<3>(6*numElements / 2) += swing_damping;
 
 
@@ -700,8 +675,9 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     void CantileverBeam3D::simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio) {
         Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
         Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Eigen::VectorXd forceVector = applyEndpointLoad(endPointLoad);
+        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
         Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
+        Eigen::Vector3d pointLoad = { 10000,0,0 };
 
         // Rayleigh damping using two lowest modes (if available)
         Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
@@ -723,8 +699,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         Eigen::MatrixXd Cactive = alpha * Mactive + beta * Kactive;
 
         // Newmark parameters
-        double gamma = 0.5;
-        double beta_nb = 0.25;
+
         Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs); // displacement
         Eigen::VectorXd v = Eigen::VectorXd::Zero(activeDOFs); // velocity
         Eigen::VectorXd acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
@@ -749,9 +724,10 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             int lastNode = numElements;
             int base = 6 * lastNode;
             //modify forcevector
-            forceVector(base + 0) = amp * endPointLoad(0);
-            forceVector(base + 1) = amp * endPointLoad(1);
-            forceVector(base + 2) = amp * endPointLoad(2);
+            forceVector.segment<3>(base) = amp * pointLoad;
+            //forceVector(base + 0) = amp * pointLoad(0);
+            //forceVector(base + 1) = amp * endPointLoad(1);
+            //forceVector(base + 2) = amp * endPointLoad(2);
 
             Factive = forceVector.tail(activeDOFs);
 
@@ -796,7 +772,7 @@ CantileverBeam3D make_beam()
 
     int numElements = 20;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d pointLoad(0, 100.0, 0.0); // convert lbf to N and apply in Y
+    //Eigen::Vector3d pointLoad(0, 100.0, 0.0); // convert lbf to N and apply in Y
 
     std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     std::cout << "==========================================================" << std::endl;
@@ -811,10 +787,10 @@ CantileverBeam3D make_beam()
     std::cout << "Young's modulus: " << E << " Pa" << std::endl;
     std::cout << "Poisson ratio: " << nu << std::endl;
     std::cout << "Density: " << rho << " kg/m^3" << std::endl;
-    std::cout << "Point load at free end (N): (" << pointLoad.transpose() << ")" << std::endl;
+    //std::cout << "Point load at free end (N): (" << pointLoad.transpose() << ")" << std::endl;
     std::cout << "Number of elements: " << numElements << std::endl << std::endl;
 
-    CantileverBeam3D beam(length, E, nu, rho, area, numElements, pointLoad, outerDiameter, innerDiameter, taper);
+    CantileverBeam3D beam(length, E, nu, rho, area, numElements, outerDiameter, innerDiameter, taper);
     return beam;
 }
 
@@ -851,7 +827,7 @@ int beam2_init(openGLframe &graphics)
 
     //int numElements = 20;
     //// Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
-    Eigen::Vector3d endPointLoad(0,40000.0, 0.0); // convert lbf to N and apply in Y
+    //Eigen::Vector3d endPointLoad(0,0.0, 0.0); // convert lbf to N and apply in Y
 
     //std::cout << "3D Finite Element Cantilever (Beam) - Hollow Aluminum Tube" << std::endl;
     //std::cout << "==========================================================" << std::endl;
@@ -874,8 +850,10 @@ int beam2_init(openGLframe &graphics)
     CantileverBeam3D beam = make_beam();
 
     // Static analysis
-    Eigen::VectorXd forceVector = beam.applyEndpointLoad(endPointLoad);
-
+    //Eigen::VectorXd forceVector = beam.applyEndpointLoad(endPointLoad);
+    Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(beam.DOF());
+    Eigen::Vector3d pointLoad = { 10000,0,0 };
+    forceVector.segment<3>(beam.DOF() - 6) = pointLoad;
     //beam.solveStaticDisplacement(forceVector);
     //beam.showOnScreen(graphics);
 
@@ -887,7 +865,7 @@ int beam2_init(openGLframe &graphics)
     std::cout << std::endl;
 
     // Time domain simulation
-    beam.simulateTimeDomain(graphics, 300.0, 1/30.0);
+    beam.simulateTimeDomain(graphics, 300.0, 1/120.0);
 
     graphics.waitForCompletion();
     graphics.closeGL();

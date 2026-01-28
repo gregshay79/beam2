@@ -57,9 +57,7 @@ public:
     void applyLoads();
     void solveStaticDisplacement();
     void solveFrequencyAnalysis(int numModes);
-    Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
-
-
+    //Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
 
 };
 
@@ -95,8 +93,9 @@ private:
     int numElements;         // Number of finite elements
     double baseOutd, IzzBase;
     double elementLength;
+    double gamma, beta_nb;
 
-    Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
+    //Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
     //Object state variables
     std::vector<BeamElement3D> elements;
@@ -140,8 +139,7 @@ private:
 
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
-        int _numElements, const Eigen::Vector3d& _endPointLoad,
-        double _outDia, double _inDia, double _taper);
+        int _numElements, double _outDia, double _inDia, double _taper);
 
     void solveStaticDisplacement(Eigen::VectorXd& forceVector);
     void setupTimeDomainSimulation(double _timeStep,  double dampingRatio = 0.05);
@@ -149,7 +147,7 @@ public:
     void visualize(openGLframe& graphics);
     void solveFrequencyAnalysis(int numModes);
     void draw(openGLframe& graphics);
-    Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
+    //Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
     int DOF() { return totalDOFs; }
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
