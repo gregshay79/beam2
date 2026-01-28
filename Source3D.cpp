@@ -163,7 +163,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         ref_pos.segment<3>(i * 6) = undeformed_pos;
 
         //Now set initial position of nodes of beam
-        double angle = 5.0*M_PI/180.0;
+        double angle = 0;// 5.0 * M_PI / 180.0;
         for (i = 0; i < numElements + 1; ++i) {
 //            x.segment<3>(i * 6) = Eigen::Vector3d(0.0, i * elementLength, 0);
 //            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/2);
@@ -650,6 +650,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             }
 
             amp *= 20;
+            
             int pushedNode = numElements;
             int tip = 6 * pushedNode;
             forceVector.segment<3>(tip) = amp * pointLoad;
