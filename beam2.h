@@ -96,8 +96,6 @@ private:
     double gamma, beta_nb;
 
     double k_righting,k_holding; 
-    Eigen::Vector3d base0_global_equilibrium;
-    Eigen::Vector3d base1_global_equilibrium;
 
     //Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
@@ -154,19 +152,23 @@ public:
     void draw(openGLframe& graphics);
     //Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
     int DOF() { return totalDOFs; }
+    double ElementLength() { return elementLength; }
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
     void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
     
     // Get reaction forces at base (6 DOFs: Fx, Fy, Fz, Mx, My, Mz)
-    //Eigen::VectorXd getBaseReactionForces() const;
+    Eigen::VectorXd getBaseReactionForces() const;
+    void jam_position();
     
     // Step the beam forward with external base motion
     //void stepForwardWithBaseMotion(double timeStep, 
     //                               const Eigen::VectorXd& externalForces);
 
     void showOnScreen(openGLframe& graphics, double dt = -1);
+    Eigen::Vector3d base0_global_equilibrium;
+    Eigen::Vector3d base1_global_equilibrium;
 
 
 private:

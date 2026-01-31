@@ -266,6 +266,16 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         last_run = now;
     }
 
+    // Relocate the position vector x to be at the base0_global_equilibrium position.
+    void CantileverBeam3D::jam_position()
+    {
+        Eigen::Vector3d base = x.segment<3>(0);
+        for (int n = 0; n < numElements; ++n) {
+            x.segment<3>(6*n) -= base;
+            x.segment<3>(6*n) += base0_global_equilibrium;
+        }
+
+    }
 
     //Just draw the beam
     void CantileverBeam3D::draw(openGLframe& graphics)
@@ -631,8 +641,14 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 }
 
  
-    //Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
-    //{
+Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
+{
+    Eigen::VectorXd F_reaction(6);
+    F_reaction.segment<3>(0) = k_holding * (x.head(3) - base0_global_equilibrium);
+    F_reaction.segment<3>(3) = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
+    return F_reaction;
+}
+
     //    // Reaction forces = forces needed to maintain base motion
     //    // F_reaction = K(base, base) * u_base + K(base, active) * u_active
     //    //            + C(base, base) * v_base + C(base, active) * v_active  
@@ -663,14 +679,14 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             double time = step * timeStep;
             double amp = 1.0;
             forceVector = Eigen::VectorXd::Zero(activeDOFs);
-            //if (time < 10) {
-            //    amp = 5.0;
-            //    if (time < 5)
-            //        amp = sin(2 * time);
-            //}
-            //else {
-            //    amp = 0;
-            //}
+            if (time < 10) {
+                amp = 5.0;
+                if (time < 5)
+                    amp = sin(2 * time);
+            }
+            else {
+                amp = 0;
+            }
 
             amp *= 20;
             //amp = 0;
