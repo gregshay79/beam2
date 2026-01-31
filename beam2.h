@@ -95,6 +95,9 @@ private:
     double elementLength;
     double gamma, beta_nb;
 
+    double k_righting,k_holding; 
+    Eigen::Vector3d node1_global_equilibrium;
+
     //Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
     //Object state variables
@@ -115,6 +118,7 @@ private:
     Eigen::VectorXd acc;
     Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
     double timeStep;
+    Eigen::Vector3d origin_displacement;
     
     
     // Original coupling matrices (saved before boundary conditions zero them out)
