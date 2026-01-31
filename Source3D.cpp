@@ -407,7 +407,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
     void CantileverBeam3D::setupTimeDomainSimulation(double _timeStep, double dampingRatio)
     {
-        node1_global_equilibrium = { 0.0, elementLength, 0.0 };
+        base0_global_equilibrium = { 0,0,0 };
+        base1_global_equilibrium = { 0.0, elementLength, 0.0 };
 
         // Add implicit spring constraints to stiffness matrix
         // Spring holding base node near origin
@@ -560,10 +561,13 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     // NOW compute displacement in beam-aligned frame
     Eigen::VectorXd u_rot = x_rot - ref_pos;
     
-    Eigen::Vector3d equilibrium_in_beam_frame = R_inv * (node1_global_equilibrium - base_pos);
-    // Add equilibrium force for implicit springs
-    // k_righting * x_eq (in beam frame)
-    f_rot.segment<3>(6) += k_righting * (equilibrium_in_beam_frame - x_rot.segment<3>(6));
+    // Add equilibrium forces for implicit springs 
+    // k * x_eq (in beam frame)
+    Eigen::Vector3d equilibrium0_in_beam_frame = R_inv * (base0_global_equilibrium - base_pos);
+    f_rot.segment<3>(0) += k_holding * (equilibrium0_in_beam_frame - x_rot.segment<3>(0));
+
+    Eigen::Vector3d equilibrium1_in_beam_frame = R_inv * (base1_global_equilibrium - base_pos);
+    f_rot.segment<3>(6) += k_righting * (equilibrium1_in_beam_frame - x_rot.segment<3>(6));
 
 
     Factive = f_rot.tail(activeDOFs);
@@ -607,11 +611,11 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     if (count >= 30) {
         count = 0;
         // Compute spring reaction forces
-        Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
+        //Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
         //Eigen::Vector3d node1_equilibrium(0.0, elementLength, 0.0);
 
-        Eigen::Vector3d force_on_holding_spring = k_holding * x.head(3);
-        Eigen::Vector3d force_on_righting_spring = k_righting * (x.segment<3>(6) - node1_global_equilibrium);
+        Eigen::Vector3d force_on_holding_spring = k_holding * (x.head(3)-base0_global_equilibrium);
+        Eigen::Vector3d force_on_righting_spring = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
 
         // Print or store these forces
         std::cout << std::endl << "Force on base spring: ["
@@ -659,14 +663,14 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             double time = step * timeStep;
             double amp = 1.0;
             forceVector = Eigen::VectorXd::Zero(activeDOFs);
-            if (time < 10) {
-                amp = 5.0;
-                if (time < 5)
-                    amp = sin(2 * time);
-            }
-            else {
-                amp = 0;
-            }
+            //if (time < 10) {
+            //    amp = 5.0;
+            //    if (time < 5)
+            //        amp = sin(2 * time);
+            //}
+            //else {
+            //    amp = 0;
+            //}
 
             amp *= 20;
             //amp = 0;
@@ -684,8 +688,8 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             // Only add: (1) equilibrium position forces, (2) velocity damping
             
             // Base spring equilibrium force (spring pulls toward origin)
-            Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
-            forceVector.segment<3>(0) += k_holding * base_equilibrium;  // k * x_eq = 0
+            //Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
+            //forceVector.segment<3>(0) += k_holding * base_equilibrium;  // k * x_eq = 0
             
             // Righting spring (explicit, in global frame)
             // Eigen::Vector3d node1_pos = x.segment<3>(6);
@@ -695,8 +699,8 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             
             // Explicit velocity damping (can't be implicit)
             // Base velocity damping
-            double base_damping = -300.0;
-            forceVector.segment<3>(0) += base_damping * v.head(3);
+            //double base_damping = -300.0;
+            //forceVector.segment<3>(0) += base_damping * v.head(3);
             
             // Swing damping at midpoint
             //int midNode = numElements / 2;

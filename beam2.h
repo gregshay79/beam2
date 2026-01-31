@@ -96,7 +96,8 @@ private:
     double gamma, beta_nb;
 
     double k_righting,k_holding; 
-    Eigen::Vector3d node1_global_equilibrium;
+    Eigen::Vector3d base0_global_equilibrium;
+    Eigen::Vector3d base1_global_equilibrium;
 
     //Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
 
