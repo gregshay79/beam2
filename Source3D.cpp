@@ -125,6 +125,23 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         return M;
     }
 
+    void CantileverBeam3D::AttachBase(double mass, Eigen::Vector3d rotational_inertia) {
+
+        // Add large mass to base node (node 0)
+        for (int i = 0; i < 3; ++i) {  // translational DOFs (x, y, z)
+            globalMassMatrix(i, i) += mass;
+        }
+        
+        // Add large rotational inertia to base node
+        for (int i = 3; i < 6; ++i) {  // rotational DOFs (rx, ry, rz)
+            globalMassMatrix(i, i) += rotational_inertia(i-3);
+        }
+
+        //Recompute coupling matrices
+        K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
+        M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
+    }
+
     CantileverBeam3D::CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
         int _numElements, double _outDia, double _inDia, double _taper)
         : length(_length), E(_E), nu(_nu), rho(_rho), area(_area),
@@ -159,17 +176,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0);
             ref_pos.segment<3>(i * 6) = undeformed_pos;
         }
-        Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0); //insert last node
+        Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0); //compute last node
         ref_pos.segment<3>(i * 6) = undeformed_pos;
-
-        //Now set initial position of nodes of beam
-        double angle = 0;// 5.0 * M_PI / 180.0;
-//         for (i = 0; i < numElements + 1; ++i) {
-// //            x.segment<3>(i * 6) = Eigen::Vector3d(0.0, i * elementLength, 0);
-// //            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/2);
-//             x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle)*i * elementLength,cos(angle)*i * elementLength, 0);
-//             x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/4);
-//         }
 
         globalStiffnessMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
         globalMassMatrix = Eigen::MatrixXd::Zero(totalDOFs, totalDOFs);
@@ -178,17 +186,12 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         
         K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
         M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
-        //K_base_to_active_original = globalStiffnessMatrix.block(0, 6, 6, activeDOFs);
-        //M_base_to_active_original = globalMassMatrix.block(0, 6, 6, activeDOFs);
-        //K_base_base_original = globalStiffnessMatrix.block(0, 0, 6, 6);
-        //M_base_base_original = globalMassMatrix.block(0, 0, 6, 6);
 
-        angle = 0;// M_PI / 8;
+
+        double angle = 0;// M_PI / 8;
         for (i = 0; i < numElements + 1; ++i) {
-            //            x.segment<3>(i * 6) = Eigen::Vector3d(0.0, i * elementLength, 0);
-            //            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/2);
             x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle) * i * elementLength, cos(angle) * i * elementLength, 0);
-            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/4 - angle);
+            //x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/4 - angle);
         }
         
     }
@@ -266,13 +269,13 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         last_run = now;
     }
 
-    // Relocate the position vector x to be at the base0_global_equilibrium position.
-    void CantileverBeam3D::jam_position()
+    // Relocate the position vector x to be at the new position.
+    void CantileverBeam3D::jam_position(Eigen::Vector3d new_position)
     {
         Eigen::Vector3d base = x.segment<3>(0);
         for (int n = 0; n < numElements; ++n) {
             x.segment<3>(6*n) -= base;
-            x.segment<3>(6*n) += base0_global_equilibrium;
+            x.segment<3>(6*n) += new_position;
         }
 
     }
@@ -417,15 +420,17 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
     void CantileverBeam3D::setupTimeDomainSimulation(double _timeStep, double dampingRatio)
     {
-        base0_global_equilibrium = { 0,0,0 };
-        base1_global_equilibrium = { 0.0, elementLength, 0.0 };
+        // base0_global_equilibrium = { 0,0,0 };
+        // base1_global_equilibrium = { 0.0, elementLength, 0.0 };
+        Eigen::Vector3d rot_inertia = { 8000,18000,18000 };//in beam relative space
+        AttachBase(7500, rot_inertia);
 
         // Add implicit spring constraints to stiffness matrix
         // Spring holding base node near origin
-        k_holding = 6000000.0;  // N/m (translational)
-        for (int i = 0; i < 3; ++i) {  // x, y, z translations
-            globalStiffnessMatrix(i, i) += k_holding;
-        }
+        //k_holding = 6000000.0;  // N/m (translational)
+        //for (int i = 0; i < 3; ++i) {  // x, y, z translations
+        //    globalStiffnessMatrix(i, i) += k_holding;
+        //}
         
         //// Add rotational springs to base (optional, for stability)
         //double k_rot = 100000.0;  // N⋅m/rad
@@ -434,10 +439,10 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //}
         
         // // Spring pulling second node toward upright position (righting force)
-        k_righting = 6000000.0;  // N/m
-        for (int i = 0; i < 3; ++i) {
-            globalStiffnessMatrix(6 + i, 6 + i) += k_righting;
-        }
+        //k_righting = 6000000.0;  // N/m
+        //for (int i = 0; i < 3; ++i) {
+        //    globalStiffnessMatrix(6 + i, 6 + i) += k_righting;
+        //}
         
         // Extract active submatrices AFTER adding springs
         Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
@@ -573,11 +578,11 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     
     // Add equilibrium forces for implicit springs 
     // k * x_eq (in beam frame)
-    Eigen::Vector3d equilibrium0_in_beam_frame = R_inv * (base0_global_equilibrium - base_pos);
-    f_rot.segment<3>(0) += k_holding * (equilibrium0_in_beam_frame - x_rot.segment<3>(0));
+    // Eigen::Vector3d equilibrium0_in_beam_frame = R_inv * (base0_global_equilibrium - base_pos);
+    // f_rot.segment<3>(0) += k_holding * (equilibrium0_in_beam_frame - x_rot.segment<3>(0));
 
-    Eigen::Vector3d equilibrium1_in_beam_frame = R_inv * (base1_global_equilibrium - base_pos);
-    f_rot.segment<3>(6) += k_righting * (equilibrium1_in_beam_frame - x_rot.segment<3>(6));
+    // Eigen::Vector3d equilibrium1_in_beam_frame = R_inv * (base1_global_equilibrium - base_pos);
+    // f_rot.segment<3>(6) += k_righting * (equilibrium1_in_beam_frame - x_rot.segment<3>(6));
 
 
     Factive = f_rot.tail(activeDOFs);
@@ -616,36 +621,36 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         acc.segment<3>(idx) = R_beam * acc_rot.segment<3>(idx);
     }
 
-    static int count = 0;
-    count++;
-    if (count >= 30) {
-        count = 0;
-        // Compute spring reaction forces
-        //Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
-        //Eigen::Vector3d node1_equilibrium(0.0, elementLength, 0.0);
+    // static int count = 0;
+    // count++;
+    // if (count >= 30) {
+    //     count = 0;
+    //     // Compute spring reaction forces
+    //     //Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
+    //     //Eigen::Vector3d node1_equilibrium(0.0, elementLength, 0.0);
 
-        Eigen::Vector3d force_on_holding_spring = k_holding * (x.head(3)-base0_global_equilibrium);
-        Eigen::Vector3d force_on_righting_spring = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
+    //     Eigen::Vector3d force_on_holding_spring = k_holding * (x.head(3)-base0_global_equilibrium);
+    //     Eigen::Vector3d force_on_righting_spring = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
 
-        // Print or store these forces
-        std::cout << std::endl << "Force on base spring: ["
-                << force_on_holding_spring(0) << ", "
-                << force_on_holding_spring(1) << ", "
-                << force_on_holding_spring(2) << "]" << std::endl;
+    //     // Print or store these forces
+    //     std::cout << std::endl << "Force on base spring: ["
+    //             << force_on_holding_spring(0) << ", "
+    //             << force_on_holding_spring(1) << ", "
+    //             << force_on_holding_spring(2) << "]" << std::endl;
                 
-        std::cout << "Force on node1 spring: [" 
-                << force_on_righting_spring(0) << ", "
-                << force_on_righting_spring(1) << ", "
-                << force_on_righting_spring(2) << "]" << std::endl;    
-    }
+    //     std::cout << "Force on node1 spring: [" 
+    //             << force_on_righting_spring(0) << ", "
+    //             << force_on_righting_spring(1) << ", "
+    //             << force_on_righting_spring(2) << "]" << std::endl;    
+    // }
 }
 
  
 Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
 {
-    Eigen::VectorXd F_reaction(6);
-    F_reaction.segment<3>(0) = k_holding * (x.head(3) - base0_global_equilibrium);
-    F_reaction.segment<3>(3) = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
+    Eigen::VectorXd F_reaction = Eigen::VectorXd::Zero(6);
+    // F_reaction.segment<3>(0) = k_holding * (x.head(3) - base0_global_equilibrium);
+    // F_reaction.segment<3>(3) = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
     return F_reaction;
 }
 
@@ -672,7 +677,7 @@ Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
     void CantileverBeam3D::simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio)
     {
         setupTimeDomainSimulation(_timeStep, _dampingRatio);
-        Eigen::Vector3d pointLoad = { 100,0,0 };
+        Eigen::Vector3d pointLoad = { 400,0,0 }; //100 lbs force
         Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
         int numSteps = static_cast<int>(duration / _timeStep);
         for (int step = 0; step <= numSteps; ++step) {
@@ -688,7 +693,7 @@ Eigen::VectorXd CantileverBeam3D::getBaseReactionForces() const
                 amp = 0;
             }
 
-            amp *= 20;
+            
             //amp = 0;
 
             if (time > 20) amp = 0;
