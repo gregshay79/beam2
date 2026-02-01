@@ -57,7 +57,6 @@ public:
     void applyLoads();
     void solveStaticDisplacement();
     void solveFrequencyAnalysis(int numModes);
-    //Eigen::VectorXd applyEndpointLoad(Eigen::Vector3d endPointLoad);
 
 };
 
@@ -95,17 +94,12 @@ private:
     double elementLength;
     double gamma, beta_nb;
 
-    //double k_righting,k_holding; 
-
-    //Eigen::Vector3d endPointLoad; // Point load at the free end (N), 3D vector
-
     //Object state variables
     std::vector<BeamElement3D> elements;
     Eigen::MatrixXd globalStiffnessMatrix;
     Eigen::MatrixXd globalMassMatrix;
     Eigen::MatrixXd globalDampingMatrix;
-//    Eigen::VectorXd forceVectorMag;
-//    Eigen::VectorXd forceVector;
+
     Eigen::VectorXd x; // position
     Eigen::VectorXd ref_pos; // reference position
     Eigen::VectorXd v; // velocity
@@ -119,27 +113,11 @@ private:
     double timeStep;
     Eigen::Vector3d origin_displacement;
     
-    
-    // Original coupling matrices (saved before boundary conditions zero them out)
-    //Eigen::MatrixXd K_coupling_original;  // K(active_rows, base_cols) - original before BC
-    //Eigen::MatrixXd M_coupling_original;   // M(active_rows, base_cols) - original before BC
-    //Eigen::MatrixXd K_base_to_active_original;  // K(base_rows, active_cols) - original before BC
-    //Eigen::MatrixXd M_base_to_active_original;   // M(base_rows, active_cols) - original before BC
-    //Eigen::MatrixXd K_base_base_original;  // K(base_rows, base_cols) - original before BC
-    //Eigen::MatrixXd M_base_base_original;   // M(base_rows, base_cols) - original before BC
-    
     // Coupling matrices: forces on active DOFs due to base motion
-    Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
-    Eigen::MatrixXd C_coupling;  // C(active_rows, base_cols)
-    Eigen::MatrixXd M_coupling;   // M(active_rows, base_cols)
+    //Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
+    //Eigen::MatrixXd C_coupling;  // C(active_rows, base_cols)
+    //Eigen::MatrixXd M_coupling;   // M(active_rows, base_cols)
     
-    // For computing reaction forces: forces on base due to active DOF motion
-    //Eigen::MatrixXd K_base_to_active;  // K(base_rows, active_cols)
-    //Eigen::MatrixXd C_base_to_active;  // C(base_rows, active_cols)
-    //Eigen::MatrixXd M_base_to_active;   // M(base_rows, active_cols)
-    //Eigen::MatrixXd K_base_base;  // K(base_rows, base_cols)
-    //Eigen::MatrixXd M_base_base;   // M(base_rows, base_cols)
-
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
         int _numElements, double _outDia, double _inDia, double _taper);
@@ -153,13 +131,14 @@ public:
     void AttachBase(double mass, Eigen::Vector3d rotationl_inertia);
     int DOF() { return totalDOFs; }
     double ElementLength() { return elementLength; }
+    Eigen::VectorXd getOrientation();
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
     void simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio = 0.05);
     
     // Get reaction forces at base (6 DOFs: Fx, Fy, Fz, Mx, My, Mz)
-    Eigen::VectorXd getBaseReactionForces() const;
+    //Eigen::VectorXd getBaseReactionForces() const;
     void jam_position(Eigen::Vector3d _new_position);
     
     void showOnScreen(openGLframe& graphics, double dt = -1);
