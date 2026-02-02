@@ -187,10 +187,10 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
         //M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
 
-        double angle = 0;// M_PI / 8;
+        double angle = 0;// M_PI / 16;
         for (i = 0; i < numElements + 1; ++i) {
             x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle) * i * elementLength, cos(angle) * i * elementLength, 0);
-            //x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0.0, 0.0, M_PI/4 - angle);
+            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0, 0, 0);
         }
         
     }
@@ -258,11 +258,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     void CantileverBeam3D::jam_position(Eigen::Vector3d new_position)
     {
         Eigen::Vector3d base = x.segment<3>(0);
-        for (int n = 0; n < numElements; ++n) {
+        for (int n = 0; n < numElements+1; ++n) {
             x.segment<3>(6*n) -= base;
             x.segment<3>(6*n) += new_position;
+            //x(6 * n + 4) = M_PI / 32;
         }
-
     }
 
     //Just draw the beam
@@ -484,14 +484,101 @@ Eigen::Matrix3d rotationFromXAxisTo(const Eigen::Vector3d& direction) {
     return R;
 }
 
+// Compute rotation matrix that rotates x-axis to align with given direction
+Eigen::Matrix3d rotationFromYAxisTo(const Eigen::Vector3d& direction) {
+    Eigen::Vector3d dir = direction.normalized();
+    Eigen::Vector3d y_axis(0, 1, 0);
+
+    // If direction is already along x-axis, return identity
+    if ((dir - y_axis).norm() < 1e-6) {
+        return Eigen::Matrix3d::Identity();
+    }
+
+    // If direction is opposite x-axis, rotate 180° around z
+    if ((dir + y_axis).norm() < 1e-6) {
+        Eigen::Matrix3d R;
+        R << -1, 0, 0,
+            0, -1, 0,
+            0, 0, 1;
+        return R;
+    }
+
+    // General case: use Rodrigues' rotation formula
+    Eigen::Vector3d v = y_axis.cross(dir);  // rotation axis
+    double s = v.norm();                     // sin(angle)
+    double c = y_axis.dot(dir);              // cos(angle)
+
+    Eigen::Matrix3d vx;  // skew-symmetric matrix of v
+    vx << 0, -v(2), v(1),
+        v(2), 0, -v(0),
+        -v(1), v(0), 0;
+
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() + vx + vx * vx * ((1 - c) / (s * s));
+
+    return R;
+}
+
+// Extract Euler angles from rotation matrix (ZYX convention: yaw-pitch-roll)
+// Avoids gimbal lock by detecting singularities
+Eigen::Vector3d eulerAnglesZYX(const Eigen::Matrix3d& R)
+{
+    Eigen::Vector3d angles;
+    
+    // Check for gimbal lock (pitch near ±90°)
+    double sin_pitch = -R(2, 0);
+    
+    const double GIMBAL_LOCK_THRESHOLD = 0.99999;
+    
+    if (std::abs(sin_pitch) > GIMBAL_LOCK_THRESHOLD)
+    {
+        // Gimbal lock case: pitch is near ±90°
+        // In this case, yaw and roll are not uniquely defined
+        // We set yaw to 0 and compute roll as the combination
+        angles(0) = 0.0;  // yaw (rotation about Z)
+        angles(1) = std::asin(std::clamp(sin_pitch, -1.0, 1.0));  // pitch (rotation about Y)
+        
+        if (sin_pitch > 0)  // pitch = +90°
+        {
+            angles(2) = std::atan2(-R(0, 1), R(1, 1));  // roll (rotation about X)
+        }
+        else  // pitch = -90°
+        {
+            angles(2) = std::atan2(R(0, 1), R(1, 1));
+        }
+    }
+    else
+    {
+        // Normal case: no gimbal lock
+        angles(0) = std::atan2(R(1, 0), R(0, 0));  // yaw (rotation about Z)
+        angles(1) = std::asin(std::clamp(sin_pitch, -1.0, 1.0));  // pitch (rotation about Y)
+        angles(2) = std::atan2(R(2, 1), R(2, 2));  // roll (rotation about X)
+    }
+    
+    return angles;  // Returns [yaw, pitch, roll] in radians
+}
+
 Eigen::VectorXd CantileverBeam3D::getOrientation()
 {
     Eigen::VectorXd result = Eigen::VectorXd::Zero(6);
     // Determine beam's current orientation from the first element position and direction.
     result.segment<3>(0) = x.segment<3>(0);
-    result.segment<3>(3) = x.segment<3>(3);
+
+    //TODO: compute the angles relative to the axis, using the first two nodes of the beam.
+    Eigen::Vector3d node0_pos = x.segment<3>(0);
+    Eigen::Vector3d node1_pos = x.segment<3>(6);
+    Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
+    Eigen::Matrix3d R_beam = rotationFromYAxisTo(beam_direction);
+    Eigen::Vector3d angles = eulerAnglesZYX(R_beam);
+    result.segment<3>(3) = angles;
+
+    //result.segment<3>(3) = x.segment<3>(3);
 
     return result;
+}
+
+Eigen::VectorXd CantileverBeam3D::getBaseVelocity()
+{
+    return v.head(6);
 }
 
 void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)

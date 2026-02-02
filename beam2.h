@@ -132,6 +132,8 @@ public:
     int DOF() { return totalDOFs; }
     double ElementLength() { return elementLength; }
     Eigen::VectorXd getOrientation();
+    Eigen::VectorXd getBaseVelocity();
+
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
 
