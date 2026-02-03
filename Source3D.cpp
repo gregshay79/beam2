@@ -157,6 +157,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         ref_pos = Eigen::VectorXd::Zero(activeDOFs); // reference position
         v = Eigen::VectorXd::Zero(activeDOFs); // velocity
         acc = Eigen::VectorXd::Zero(activeDOFs); // velocity
+        origin_displacement = Eigen::Vector3d::Zero();
+        //origin_orientation = Eigen::Vector3d::Zero();
 
         // Build elements with tapered properties along the span
         int i;
@@ -415,6 +417,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         Factive = forceVector.tail(activeDOFs);
         timeStep = _timeStep;
         origin_displacement = { 0,0,0 };
+        //origin_orientation = { 0,0,0 };
 
         // Rayleigh damping using two lowest modes (if available)
         //Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
@@ -559,21 +562,23 @@ Eigen::Vector3d eulerAnglesZYX(const Eigen::Matrix3d& R)
 
 Eigen::VectorXd CantileverBeam3D::getOrientation()
 {
-    Eigen::VectorXd result = Eigen::VectorXd::Zero(6);
-    // Determine beam's current orientation from the first element position and direction.
-    result.segment<3>(0) = x.segment<3>(0);
 
-    //TODO: compute the angles relative to the axis, using the first two nodes of the beam.
-    Eigen::Vector3d node0_pos = x.segment<3>(0);
-    Eigen::Vector3d node1_pos = x.segment<3>(6);
-    Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
-    Eigen::Matrix3d R_beam = rotationFromYAxisTo(beam_direction);
-    Eigen::Vector3d angles = eulerAnglesZYX(R_beam);
-    result.segment<3>(3) = angles;
+    return x.segment<6>(0);
+    Eigen::VectorXd result = Eigen::VectorXd::Zero(6);
+    //// Determine beam's current orientation from the first element position and direction.
+    //result.segment<3>(0) = x.segment<3>(0);
+
+    ////Wrong: compute the angles relative to the axis, using the first two nodes of the beam.
+    ////Eigen::Vector3d node0_pos = x.segment<3>(0);
+    ////Eigen::Vector3d node1_pos = x.segment<3>(6);
+    ////Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
+    ////Eigen::Matrix3d R_beam = rotationFromYAxisTo(beam_direction);
+    ////Eigen::Vector3d angles = eulerAnglesZYX(R_beam);
+    ////result.segment<3>(3) = angles;
 
     //result.segment<3>(3) = x.segment<3>(3);
 
-    return result;
+    //return result;
 }
 
 Eigen::VectorXd CantileverBeam3D::getBaseVelocity()
@@ -581,20 +586,71 @@ Eigen::VectorXd CantileverBeam3D::getBaseVelocity()
     return v.head(6);
 }
 
+// Convert XYZ Euler angles to rotation matrix
+// Rotation order: first X, then Y, then Z
+Eigen::Matrix3d rotationMatrixFromAnglesXYZ(const Eigen::Vector3d& angles) {
+    double angle_x = angles(0);  // rotation about X-axis (roll)
+    double angle_y = angles(1);  // rotation about Y-axis (pitch)
+    double angle_z = angles(2);  // rotation about Z-axis (yaw)
+    
+    // Individual rotation matrices
+    Eigen::Matrix3d Rx, Ry, Rz;
+    
+    // Rotation about X-axis
+    Rx << 1, 0,            0,
+          0, cos(angle_x), -sin(angle_x),
+          0, sin(angle_x),  cos(angle_x);
+    
+    // Rotation about Y-axis
+    Ry << cos(angle_y),  0, sin(angle_y),
+          0,             1, 0,
+          -sin(angle_y), 0, cos(angle_y);
+    
+    // Rotation about Z-axis
+    Rz << cos(angle_z), -sin(angle_z), 0,
+          sin(angle_z),  cos(angle_z), 0,
+          0,             0,            1;
+    
+    // XYZ order: apply X first, then Y, then Z
+    // R = Rz * Ry * Rx
+    return Rz * Ry * Rx;
+}
+
 void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
 {
     // Determine beam's current orientation from first element direction
-    Eigen::Vector3d node0_pos = x.segment<3>(0);
-    Eigen::Vector3d node1_pos = x.segment<3>(6);
-    Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
+    // Eigen::Vector3d node0_pos = x.segment<3>(0);
+    // Eigen::Vector3d node1_pos = x.segment<3>(6);
+    // Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
 
     //Eigen::Vector3d base_pos = x.segment<3>(0);
-    Eigen::Vector3d base_pos = x.segment<3>(0) - origin_displacement; // subtract the u of the base. WOW! this was correct!
+    Eigen::Vector3d base_pos = x.segment<3>(0) - origin_displacement; // subtract the displacement of the base. WOW! this was correct!
 
-    // Compute rotation from reference (x-axis) to current beam direction
-    Eigen::Matrix3d R_beam = rotationFromXAxisTo(beam_direction);
-    Eigen::Matrix3d R_inv = R_beam.transpose();
-    
+    //No... Find the rotation from the x frame of reference to the beam frame of reference.
+    //This method below loses the y axis yaw
+    // Eigen::Matrix3d R_beam = rotationFromXAxisTo(beam_direction);
+    // Eigen::Matrix3d R_inv = R_beam.transpose();
+
+    // Compute rotation matrix from the angles in the first element,
+    // to transform from the world frame to the beam frame (rotation 0,0,0 is the beam frame).
+    Eigen::Vector3d base_angles = x.segment<3>(3);
+ 
+    Eigen::Matrix3d R_beam = rotationMatrixFromAnglesXYZ(base_angles);
+
+    // Create π/2 rotation about Z-axis
+    Eigen::Matrix3d R_z_90;
+    R_z_90 << 0, -1, 0,
+            1,  0, 0,
+            0,  0, 1;
+
+    Eigen::Matrix3d R_z_minus90;
+    R_z_minus90 <<  0,  1, 0,
+                    -1,  0, 0,
+                    0,  0, 1;
+    // Apply transpose of beam rotation first, then Z rotation in beam's local frame
+    R_beam = R_z_minus90 * R_beam.transpose();
+    Eigen::Matrix3d R_inv = R_beam;
+        
     // Transform positions, velocities, and forces to beam-aligned frame
     Eigen::VectorXd x_rot(activeDOFs);
     Eigen::VectorXd v_rot = v;
@@ -637,22 +693,31 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     // Compute positions in beam frame from displacements
     Eigen::VectorXd x_rot_new = ref_pos + u_rot;
 
-    // Find the beam origin displacement in global space
-    origin_displacement = R_beam * u_rot.segment<3>(0);
 
+    // update the base angles after the new force deformation.
+    // The new force deformation angles are small, so can directly add.
+    base_angles += u_rot.segment<3>(3);
+
+    // Rotate back to world space.
+    // First rotate by -90 degrees about Z-axis, then rotate by the updated base angles.
+    Eigen::Matrix3d R_beam_updated = rotationMatrixFromAnglesXYZ(base_angles);
+    R_beam_updated = R_beam_updated * R_z_90;
+
+    // Find the beam origin displacement in global space
+    origin_displacement = R_beam_updated * u_rot.segment<3>(0);
     
     // Transform back to global frame
     for (int i = 0; i < numElements + 1; ++i) {
         int idx = 6 * i;
         // Rotate positions back
-        x.segment<3>(idx) = R_beam * (x_rot_new.segment<3>(idx)) + base_pos;
+        x.segment<3>(idx) = R_beam_updated * (x_rot_new.segment<3>(idx)) + base_pos;
         
         // Transform rotations back to global frame
-        x.segment<3>(idx + 3) = R_beam * x_rot_new.segment<3>(idx + 3);
+        x.segment<3>(idx + 3) = R_beam_updated * x_rot_new.segment<3>(idx + 3);
         
         // Rotate velocities and accelerations back
-        v.segment<3>(idx) = R_beam * v_rot.segment<3>(idx);
-        acc.segment<3>(idx) = R_beam * acc_rot.segment<3>(idx);
+        v.segment<3>(idx) = R_beam_updated * v_rot.segment<3>(idx);
+        acc.segment<3>(idx) = R_beam_updated * acc_rot.segment<3>(idx);
     }
 
     // static int count = 0;

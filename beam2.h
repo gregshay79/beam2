@@ -112,6 +112,7 @@ private:
     Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
     double timeStep;
     Eigen::Vector3d origin_displacement;
+    //Eigen::Vector3d origin_orientation;
     
     // Coupling matrices: forces on active DOFs due to base motion
     //Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
