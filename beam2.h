@@ -1,4 +1,6 @@
-﻿#include <iostream>
+﻿#pragma once
+
+#include <iostream>
 #include <vector>
 #include <cmath>
 
@@ -8,6 +10,8 @@
 #include "../opengl3.h"
 int beam2_init(openGLframe &graphics);
 #endif
+
+#define MASTSEG 20
 
 double calculateHollowTubeMomentOfInertia(double outerDiameter, double innerDiameter);
 double calculateHollowTubeArea(double outerDiameter, double innerDiameter);
@@ -137,6 +141,8 @@ public:
     Eigen::VectorXd getBaseTransform(); // return both base displacement and orientation
     Eigen::VectorXd getBaseVelocity(); // return 
     Eigen::VectorXd x_world; // position
+    int masttieix[MASTSEG];
+    Eigen::Vector3d masttiepoint[34];
 
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
