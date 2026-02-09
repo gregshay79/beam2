@@ -721,8 +721,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
     Eigen::Matrix3d R_beam_updated = rotationMatrixFromAnglesXYZ(base_delta_angles);
     
-    //Accumulate the base rotations into the world coordinate transform
-    base_orientation += base_delta_angles;
+
             
     //Rotate the beam model the opposite amount to keep the beam normally aligned
     Eigen::Matrix3d R_beam_update_t = R_beam_updated.transpose();
@@ -750,19 +749,21 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
     //Compute the updated x_world model and base_velocity_world.
     //World coordinate transform includes the z rotation by 90
+    // First rotate by -90 degrees about Z-axis, then rotate by the updated base angles.
     R_beam_to_world = rotationMatrixFromAnglesXYZ(base_orientation);
-    R_beam_to_world = R_z_90 * R_beam_to_world;
+    R_beam_to_world =  R_beam_to_world * R_z_90;
 
     // update the world transform after the new force deformation.
     base_displacement += R_beam_to_world * base_pos;
+    //Accumulate the base rotations into the world coordinate transform
+    base_orientation += R_beam_to_world * base_delta_angles;
+
     base_velocity_world.segment<3>(0) = R_beam_to_world * v.segment<3>(0);
     //base_velocity_world.segment<3>(3) = R_beam_to_world * v.segment<3>(3);
-
 
     // Find the beam origin displacement in global space
     //base_displacement = R_beam_updated * u_rot.segment<3>(0);
 
-    // First rotate by -90 degrees about Z-axis, then rotate by the updated base angles.
 
     // Transform beam to world coordinates
     for (int i = 0; i < numElements + 1; ++i) {
