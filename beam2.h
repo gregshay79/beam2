@@ -100,19 +100,21 @@ private:
     Eigen::MatrixXd globalMassMatrix;
     Eigen::MatrixXd globalDampingMatrix;
 
-    Eigen::VectorXd x; // position
+
+    Eigen::VectorXd u;
     Eigen::VectorXd ref_pos; // reference position
     Eigen::VectorXd v; // velocity
 
     //Simulation variables
-    int totalDOFs, activeDOFs;
+    int totalDOFs;// , activeDOFs;
     Eigen::MatrixXd Kactive, Mactive, Factive, Cactive;
     Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
     Eigen::VectorXd acc;
     Eigen::LLT<Eigen::MatrixXd> lltOfLHS;
     double timeStep;
-    Eigen::Vector3d origin_displacement;
-    //Eigen::Vector3d origin_orientation;
+    Eigen::Vector3d base_displacement;
+    Eigen::Vector3d base_orientation;
+    Eigen::VectorXd base_velocity_world;
     
     // Coupling matrices: forces on active DOFs due to base motion
     //Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
@@ -132,8 +134,9 @@ public:
     void AttachBase(double mass, Eigen::Vector3d rotationl_inertia);
     int DOF() { return totalDOFs; }
     double ElementLength() { return elementLength; }
-    Eigen::VectorXd getOrientation();
-    Eigen::VectorXd getBaseVelocity();
+    Eigen::VectorXd getBaseTransform(); // return both base displacement and orientation
+    Eigen::VectorXd getBaseVelocity(); // return 
+    Eigen::VectorXd x_world; // position
 
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);

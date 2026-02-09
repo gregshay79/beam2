@@ -149,16 +149,18 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
         // Global DOFs: 6 per node
         totalDOFs = 6 * (numElements + 1);
-        activeDOFs = totalDOFs;// -6;
+        //activeDOFs = totalDOFs;// -6;
         elementLength = length / numElements;
         baseOutd = _outDia;
 
-        x = Eigen::VectorXd::Zero(activeDOFs); // position
-        ref_pos = Eigen::VectorXd::Zero(activeDOFs); // reference position
-        v = Eigen::VectorXd::Zero(activeDOFs); // velocity
-        acc = Eigen::VectorXd::Zero(activeDOFs); // velocity
-        origin_displacement = Eigen::Vector3d::Zero();
-        //origin_orientation = Eigen::Vector3d::Zero();
+        u = Eigen::VectorXd::Zero(totalDOFs); // position
+        ref_pos = Eigen::VectorXd::Zero(totalDOFs); // reference position
+        v = Eigen::VectorXd::Zero(totalDOFs); // velocity
+        acc = Eigen::VectorXd::Zero(totalDOFs); // velocity
+        base_displacement = Eigen::Vector3d::Zero();
+        base_orientation = Eigen::Vector3d::Zero();
+        base_velocity_world = Eigen::VectorXd::Zero(6);
+        x_world = Eigen::VectorXd::Zero(totalDOFs);
 
         // Build elements with tapered properties along the span
         int i;
@@ -189,11 +191,11 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         //K_coupling = globalStiffnessMatrix.block(totalDOFs - activeDOFs, 0, activeDOFs, 6);
         //M_coupling = globalMassMatrix.block(totalDOFs-activeDOFs, 0, activeDOFs, 6);
 
-        double angle = 0;// M_PI / 16;
-        for (i = 0; i < numElements + 1; ++i) {
-            x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle) * i * elementLength, cos(angle) * i * elementLength, 0);
-            x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0, 0, 0);
-        }
+        //double angle = 0;// M_PI / 16;
+        //for (i = 0; i < numElements + 1; ++i) {
+        //    x.segment<3>(i * 6) = Eigen::Vector3d(sin(angle) * i * elementLength, cos(angle) * i * elementLength, 0);
+        //    x.segment<3>(i * 6 + 3) = Eigen::Vector3d(0, 0, 0);
+        //}
         
     }
 
@@ -259,12 +261,13 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     // Relocate the position vector x to be at the new position.
     void CantileverBeam3D::jam_position(Eigen::Vector3d new_position)
     {
-        Eigen::Vector3d base = x.segment<3>(0);
-        for (int n = 0; n < numElements+1; ++n) {
-            x.segment<3>(6*n) -= base;
-            x.segment<3>(6*n) += new_position;
-            //x(6 * n + 4) = M_PI / 32;
-        }
+        base_displacement = new_position;
+        //Eigen::Vector3d base = x.segment<3>(0);
+        //for (int n = 0; n < numElements+1; ++n) {
+        //    x.segment<3>(6*n) -= base;
+        //    x.segment<3>(6*n) += new_position;
+        //    //x(6 * n + 4) = M_PI / 32;
+        //}
     }
 
     //Just draw the beam
@@ -272,7 +275,8 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     {
         // visualize current state: reconstruct full displacement vector
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-        fullDisp.tail(activeDOFs) = x; // u is of length ActiveDOF
+        //fullDisp = ref_pos + u; // u is of length ActiveDOF
+        fullDisp = x_world; // u is of length ActiveDOF
 
         std::vector<LineSegment> lineSegments;
 
@@ -317,15 +321,15 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     // F_y = \frac{ dM }{dx}
 
     void CantileverBeam3D::solveStaticDisplacement(Eigen::VectorXd& forceVector) {
-        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(totalDOFs, totalDOFs);
+        Eigen::VectorXd Factive = forceVector;
 
         //Eigen::VectorXd displacements = Kactive.colPivHouseholderQr().solve(Factive);
-        Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs);
+        Eigen::VectorXd u = Eigen::VectorXd::Zero(totalDOFs);
         u = Kactive.colPivHouseholderQr().solve(Factive);
 
         Eigen::VectorXd fullDisp = Eigen::VectorXd::Zero(totalDOFs);
-        fullDisp.tail(activeDOFs) = u;
+        fullDisp = u;
 
         std::cout << "Static Displacement Analysis Results (3D):" << std::endl;
         std::cout << "------------------------------------------" << std::endl;
@@ -388,13 +392,13 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
     }
 
     void CantileverBeam3D::solveFrequencyAnalysis(int numModes) {
-        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(totalDOFs, totalDOFs);
+        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(totalDOFs, totalDOFs);
 
         Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver(Kactive, Mactive);
 
         std::cout << "Natural Frequencies (3D):" << std::endl;
-        for (int i = 0; i < std::min(numModes, activeDOFs); ++i) {
+        for (int i = 0; i < std::min(numModes, totalDOFs); ++i) {
             double omega2 = solver.eigenvalues()(i);
             if (omega2 <= 0) continue;
             double freq = std::sqrt(omega2) / (2.0 * M_PI);
@@ -404,20 +408,18 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 
     void CantileverBeam3D::setupTimeDomainSimulation(double _timeStep, double dampingRatio)
     {
-        // base0_global_equilibrium = { 0,0,0 };
-        // base1_global_equilibrium = { 0.0, elementLength, 0.0 };
         Eigen::Vector3d rot_inertia = { 8000,18000,18000 };//in beam relative space
         AttachBase(7500, rot_inertia);
 
         // Extract active submatrices AFTER adding springs
-        Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
+        Kactive = globalStiffnessMatrix.bottomRightCorner(totalDOFs, totalDOFs);
+        Mactive = globalMassMatrix.bottomRightCorner(totalDOFs, totalDOFs);
         
-        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
-        Factive = forceVector.tail(activeDOFs);
+        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
+        Factive = forceVector;
         timeStep = _timeStep;
-        origin_displacement = { 0,0,0 };
-        //origin_orientation = { 0,0,0 };
+        base_displacement = { 0,0,0 };
+        base_orientation = { 0,0,0 };
 
         // Rayleigh damping using two lowest modes (if available)
         //Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver;
@@ -445,9 +447,9 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         gamma = 0.5;
         beta_nb = 0.25;
         //Note: positions x already computed in constructor
-        v = Eigen::VectorXd::Zero(activeDOFs); // velocity
+        v = Eigen::VectorXd::Zero(totalDOFs); // velocity
         //acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
-        acc = Eigen::VectorXd::Zero(activeDOFs);
+        acc = Eigen::VectorXd::Zero(totalDOFs);
         
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
         lltOfLHS = Eigen::LLT<Eigen::MatrixXd>(LHS);
@@ -560,30 +562,20 @@ Eigen::Vector3d eulerAnglesZYX(const Eigen::Matrix3d& R)
     return angles;  // Returns [yaw, pitch, roll] in radians
 }
 
-Eigen::VectorXd CantileverBeam3D::getOrientation()
+Eigen::VectorXd CantileverBeam3D::getBaseTransform()
 {
 
-    return x.segment<6>(0);
+    
     Eigen::VectorXd result = Eigen::VectorXd::Zero(6);
-    //// Determine beam's current orientation from the first element position and direction.
-    //result.segment<3>(0) = x.segment<3>(0);
-
-    ////Wrong: compute the angles relative to the axis, using the first two nodes of the beam.
-    ////Eigen::Vector3d node0_pos = x.segment<3>(0);
-    ////Eigen::Vector3d node1_pos = x.segment<3>(6);
-    ////Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
-    ////Eigen::Matrix3d R_beam = rotationFromYAxisTo(beam_direction);
-    ////Eigen::Vector3d angles = eulerAnglesZYX(R_beam);
-    ////result.segment<3>(3) = angles;
-
-    //result.segment<3>(3) = x.segment<3>(3);
-
-    //return result;
+    result.segment<3>(0) = base_displacement;
+    result.segment<3>(3) = base_orientation;
+    return result;
 }
 
+//Return base velocity in world coordinates
 Eigen::VectorXd CantileverBeam3D::getBaseVelocity()
 {
-    return v.head(6);
+    return base_velocity_world; 
 }
 
 // Convert XYZ Euler angles to rotation matrix
@@ -616,6 +608,13 @@ Eigen::Matrix3d rotationMatrixFromAnglesXYZ(const Eigen::Vector3d& angles) {
     return Rz * Ry * Rx;
 }
 
+//Keep the beam model always in its own coordinate system.
+// The external forces coming in have to be translated to beam space.
+// As the beam is free floating, after each iteration there will be a certain amount of 
+// base movement and rotation.
+// Adjust the model by this delta translation to keep the model beam aligned,
+// and update the base_displacement and beam_angles for translation to world coordinates.
+//Compute an exported world model of position of every node, and the base velocity.
 void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector)
 {
     // Determine beam's current orientation from first element direction
@@ -623,8 +622,171 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     // Eigen::Vector3d node1_pos = x.segment<3>(6);
     // Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
 
+    //update the beam model given exteral forces in world coordinates.
+    //Translate the external forces coordinate system before apply them to the model.
+    // Create π/2 rotation about Z-axis
+    Eigen::Matrix3d R_z_90;
+    R_z_90 << 0, -1, 0,
+        1, 0, 0,
+        0, 0, 1;
+
+    Eigen::Matrix3d R_z_minus90;
+    R_z_minus90 << 0, 1, 0,
+        -1, 0, 0,
+        0, 0, 1;
+    Eigen::Matrix3d R_beam_to_world = rotationMatrixFromAnglesXYZ(base_orientation);
+    // Apply transpose of beam rotation first, then Z rotation in beam's local frame
+    Eigen::Matrix3d R_inv = R_z_minus90 * R_beam_to_world.transpose();
+    //Transform the forces and moments
+    Eigen::VectorXd f_rot = Eigen::VectorXd::Zero(totalDOFs);  
+    for (int i = 0; i < numElements + 1; ++i) {
+        int idx = 6 * i;
+        // Rotate forces and moments
+        // These are the only two vectors that come from outside the beam model coordinate space.
+        // Force vectors are in world coordinates.
+        // Moment vectors are in world coordinates
+        f_rot.segment<3>(idx) = R_inv * forceVector.segment<3>(idx);
+        f_rot.segment<3>(idx + 3) = R_inv * forceVector.segment<3>(idx + 3);
+        //f_rot.segment<3>(idx + 3) = R_z_minus90 * forceVector.segment<3>(idx + 3);
+    }
+
+    //// After the iteration, adjust the beam model to stay aligned with the beam base.
+    //Eigen::Vector3d base_pos = x.segment<3>(0);// -base_displacement; // subtract the displacement of the base. WOW! this was correct!
+    //// Compute rotation matrix from the angles in the first element,
+    //// to transform from the world frame to the beam frame (rotation 0,0,0 is the beam frame).
+    //Eigen::Vector3d base_angles = x.segment<3>(3);
+    //Eigen::Matrix3d R_beam = rotationMatrixFromAnglesXYZ(base_angles);
+
+
+
+
+    //// Transform positions, velocities, and forces to beam-aligned frame
+    //Eigen::VectorXd x_rot(activeDOFs);
+    //Eigen::VectorXd v_rot = v;
+    //Eigen::VectorXd acc_rot = acc;
+
+    //for (int i = 0; i < numElements + 1; ++i) {
+    //    int idx = 6 * i;
+    //    // The state coordinates of the beam model are kept in world space, so they can be related to the external model.
+    //    // Before updating the model being given external forces, the beam model has to be translated to beam relative coordinates.
+    //    // Rotate world positions to beam frame.
+    //    // What if we always keep the beam model in its own coordinate system, and only translate
+    //    // to the external world space when asked externally.
+    //    // It seems the translation from model to world space only depends on base_displacement and base_angles.
+    //    x_rot.segment<3>(idx) = R_inv * (x.segment<3>(idx) - base_pos);
+
+    //    // Transform rotations to beam-aligned frame 
+    //    x_rot.segment<3>(idx + 3) = R_inv * x.segment<3>(idx + 3);
+
+    //    // Rotate velocities and accelerations
+    //    v_rot.segment<3>(idx) = R_inv * v.segment<3>(idx);
+    //    v_rot.segment<3>(idx + 3) = R_inv * v.segment<3>(idx + 3);
+
+    //    acc_rot.segment<3>(idx) = R_inv * acc.segment<3>(idx);
+    //    acc_rot.segment<3>(idx + 3) = R_inv * acc.segment<3>(idx + 3);
+
+    //    // Rotate forces and moments
+    //    // These are the only two vectors that come from outside the beam model coordinate space.
+    //    // Forces and moments are already relative to the 
+    //    f_rot.segment<3>(idx) = R_inv * forceVector.segment<3>(idx);
+    //    //f_rot.segment<3>(idx + 3) = R_inv * forceVector.segment<3>(idx + 3);
+    //    f_rot.segment<3>(idx + 3) = R_z_minus90 * forceVector.segment<3>(idx + 3);
+    //}
+
+    // NOW compute displacement in beam-aligned frame
+    //Eigen::VectorXd u = x - ref_pos;
+
+    Factive = f_rot;
+
+    // Newmark integration in beam-aligned frame (where stiffness matrix is correct)
+    Eigen::VectorXd uPred = u + timeStep * v + timeStep * timeStep * (0.5 - beta_nb) * acc;
+    Eigen::VectorXd vPred = v + timeStep * (1.0 - gamma) * acc;
+
+    Eigen::VectorXd RHS = Factive - Kactive * uPred - Cactive * vPred;
+    Eigen::VectorXd deltaA = lltOfLHS.solve(RHS);
+
+    acc = deltaA;
+    v = vPred + gamma * timeStep * acc;
+    u = uPred + beta_nb * timeStep * timeStep * acc;
+
+    // Compute positions in beam frame from displacements
+    //Eigen::VectorXd x_new = ref_pos + u;
+
+ 
+
+    //Translate beam model back to nominal beam orientation
+    Eigen::Vector3d base_pos = u.segment<3>(0);
+    Eigen::Vector3d base_delta_angles = u.segment<3>(3);
+
+
+    Eigen::Matrix3d R_beam_updated = rotationMatrixFromAnglesXYZ(base_delta_angles);
+    
+    //Accumulate the base rotations into the world coordinate transform
+    base_orientation += base_delta_angles;
+            
+    //Rotate the beam model the opposite amount to keep the beam normally aligned
+    Eigen::Matrix3d R_beam_update_t = R_beam_updated.transpose();
+
+    for (int i = 0; i < numElements + 1; ++i) {
+        int idx = 6 * i;
+        // move positions back
+        u.segment<3>(idx) = R_beam_update_t * (u.segment<3>(idx) - base_pos);
+
+        // Transform rotations back to normal beam frame (base along x axis)
+        u.segment<3>(idx + 3) -= base_delta_angles;
+
+        // Rotate velocities and accelerations back
+        v.segment<3>(idx) = R_beam_update_t * v.segment<3>(idx);
+        //v.segment<3>(idx + 3) = R_beam_update_t * v.segment<3>(idx + 3);
+        v.segment<3>(idx + 3) -= base_delta_angles;
+
+        acc.segment<3>(idx) = R_beam_update_t * acc.segment<3>(idx);
+        //acc.segment<3>(idx + 3) = R_beam_update_t * acc.segment<3>(idx + 3);
+        acc.segment<3>(idx + 3) -= base_delta_angles;
+    }
+
+
+    //Eigen::Vector3d delta_angles = R_beam_updated * u_rot.segment<3>(3);
+
+    //Compute the updated x_world model and base_velocity_world.
+    //World coordinate transform includes the z rotation by 90
+    R_beam_to_world = rotationMatrixFromAnglesXYZ(base_orientation);
+    R_beam_to_world = R_z_90 * R_beam_to_world;
+
+    // update the world transform after the new force deformation.
+    base_displacement += R_beam_to_world * base_pos;
+    base_velocity_world.segment<3>(0) = R_beam_to_world * v.segment<3>(0);
+    //base_velocity_world.segment<3>(3) = R_beam_to_world * v.segment<3>(3);
+
+
+    // Find the beam origin displacement in global space
+    //base_displacement = R_beam_updated * u_rot.segment<3>(0);
+
+    // First rotate by -90 degrees about Z-axis, then rotate by the updated base angles.
+
+    // Transform beam to world coordinates
+    for (int i = 0; i < numElements + 1; ++i) {
+        int idx = 6 * i;
+        // Rotate and translate positions
+        x_world.segment<3>(idx) = (R_beam_to_world * (u.segment<3>(idx)+ref_pos.segment<3>(idx))) + base_displacement;
+        // Rotate angles to global frame
+        //x_world.segment<3>(idx + 3) = R_beam_to_world * u.segment<3>(idx + 3);//Note ref_pos angles are always all 0
+    }
+}
+
+
+
+
+#if 0
+void stepForward_old(double timeStep, Eigen::VectorXd& forceVector)
+{
+    // Determine beam's current orientation from first element direction
+    // Eigen::Vector3d node0_pos = x.segment<3>(0);
+    // Eigen::Vector3d node1_pos = x.segment<3>(6);
+    // Eigen::Vector3d beam_direction = (node1_pos - node0_pos).normalized();
+
     //Eigen::Vector3d base_pos = x.segment<3>(0);
-    Eigen::Vector3d base_pos = x.segment<3>(0) - origin_displacement; // subtract the displacement of the base. WOW! this was correct!
+    Eigen::Vector3d base_pos = x.segment<3>(0);// -base_displacement; // subtract the displacement of the base. WOW! this was correct!
 
     //No... Find the rotation from the x frame of reference to the beam frame of reference.
     //This method below loses the y axis yaw
@@ -652,32 +814,43 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     Eigen::Matrix3d R_inv = R_beam;
         
     // Transform positions, velocities, and forces to beam-aligned frame
-    Eigen::VectorXd x_rot(activeDOFs);
+    Eigen::VectorXd x_rot(totalDOFs);
     Eigen::VectorXd v_rot = v;
     Eigen::VectorXd acc_rot = acc;
     Eigen::VectorXd f_rot = forceVector;
     
     for (int i = 0; i < numElements + 1; ++i) {
         int idx = 6 * i;
-        // Rotate positions to beam frame
+        // The state coordinates of the beam model are kept in world space, so they can be related to the external model.
+        // Before updating the model being given external forces, the beam model has to be translated to beam relative coordinates.
+        // Rotate world positions to beam frame.
+        // What if we always keep the beam model in its own coordinate system, and only translate
+        // to the external world space when asked externally.
+        // It seems the translation from model to world space only depends on base_displacement and base_angles.
         x_rot.segment<3>(idx) = R_inv * (x.segment<3>(idx)-base_pos);
         
-        // Transform rotations to beam-aligned frame (treat angles as vectors for small angles)
+        // Transform rotations to beam-aligned frame 
         x_rot.segment<3>(idx + 3) = R_inv * x.segment<3>(idx + 3);
         
         // Rotate velocities and accelerations
         v_rot.segment<3>(idx) = R_inv * v.segment<3>(idx);
+        v_rot.segment<3>(idx+3) = R_inv * v.segment<3>(idx+3);
+
         acc_rot.segment<3>(idx) = R_inv * acc.segment<3>(idx);
-        
+        acc_rot.segment<3>(idx+3) = R_inv * acc.segment<3>(idx+3);
+
         // Rotate forces and moments
+        // These are the only two vectors that come from outside the beam model coordinate space.
+        // Forces and moments are already relative to the 
         f_rot.segment<3>(idx) = R_inv * forceVector.segment<3>(idx);
-        f_rot.segment<3>(idx + 3) = R_inv * forceVector.segment<3>(idx + 3);
+        //f_rot.segment<3>(idx + 3) = R_inv * forceVector.segment<3>(idx + 3);
+        f_rot.segment<3>(idx + 3) = R_z_minus90 * forceVector.segment<3>(idx + 3);
     }
     
     // NOW compute displacement in beam-aligned frame
     Eigen::VectorXd u_rot = x_rot - ref_pos;
     
-    Factive = f_rot.tail(activeDOFs);
+    Factive = f_rot;
         
     // Newmark integration in beam-aligned frame (where stiffness matrix is correct)
     Eigen::VectorXd uPred = u_rot + timeStep * v_rot + timeStep * timeStep * (0.5 - beta_nb) * acc_rot;
@@ -693,9 +866,6 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     // Compute positions in beam frame from displacements
     Eigen::VectorXd x_rot_new = ref_pos + u_rot;
 
-
-    // update the base angles after the new force deformation.
-    // The new force deformation angles are small, so can directly add.
     base_angles += u_rot.segment<3>(3);
 
     // Rotate back to world space.
@@ -703,8 +873,13 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
     Eigen::Matrix3d R_beam_updated = rotationMatrixFromAnglesXYZ(base_angles);
     R_beam_updated = R_beam_updated * R_z_90;
 
+
+    // update the x angles after the new force deformation.
+    // The delta angles are small, so can directly add.
+    //Eigen::Vector3d delta_angles = R_beam_updated * u_rot.segment<3>(3);
+    
     // Find the beam origin displacement in global space
-    origin_displacement = R_beam_updated * u_rot.segment<3>(0);
+    base_displacement = R_beam_updated * u_rot.segment<3>(0);
     
     // Transform back to global frame
     for (int i = 0; i < numElements + 1; ++i) {
@@ -713,60 +888,42 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         x.segment<3>(idx) = R_beam_updated * (x_rot_new.segment<3>(idx)) + base_pos;
         
         // Transform rotations back to global frame
-        x.segment<3>(idx + 3) = R_beam_updated * x_rot_new.segment<3>(idx + 3);
-        
+        //x.segment<3>(idx + 3) = R_beam_updated * x_rot_new.segment<3>(idx + 3);
+        x.segment<3>(idx + 3) = R_z_90 * (x_rot_new.segment<3>(idx + 3) + u_rot.segment<3>(3));
+
         // Rotate velocities and accelerations back
         v.segment<3>(idx) = R_beam_updated * v_rot.segment<3>(idx);
+        v.segment<3>(idx+3) = R_z_90 * v_rot.segment<3>(idx+3);
+
         acc.segment<3>(idx) = R_beam_updated * acc_rot.segment<3>(idx);
+        acc.segment<3>(idx+3) = R_z_90 * acc_rot.segment<3>(idx+3);
     }
 
-    // static int count = 0;
-    // count++;
-    // if (count >= 30) {
-    //     count = 0;
-    //     // Compute spring reaction forces
-    //     //Eigen::Vector3d base_equilibrium(0.0, 0.0, 0.0);
-    //     //Eigen::Vector3d node1_equilibrium(0.0, elementLength, 0.0);
-
-    //     Eigen::Vector3d force_on_holding_spring = k_holding * (x.head(3)-base0_global_equilibrium);
-    //     Eigen::Vector3d force_on_righting_spring = k_righting * (x.segment<3>(6) - base1_global_equilibrium);
-
-    //     // Print or store these forces
-    //     std::cout << std::endl << "Force on base spring: ["
-    //             << force_on_holding_spring(0) << ", "
-    //             << force_on_holding_spring(1) << ", "
-    //             << force_on_holding_spring(2) << "]" << std::endl;
-                
-    //     std::cout << "Force on node1 spring: [" 
-    //             << force_on_righting_spring(0) << ", "
-    //             << force_on_righting_spring(1) << ", "
-    //             << force_on_righting_spring(2) << "]" << std::endl;    
-    // }
 }
- 
+#endif
+
     void CantileverBeam3D::simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio)
     {
         setupTimeDomainSimulation(_timeStep, _dampingRatio);
-        Eigen::Vector3d pointLoad = { 400,0,0 }; //100 lbs force
-        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
+        Eigen::Vector3d pointLoad = { 100,0,0 }; //100 lbs force
+        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
         int numSteps = static_cast<int>(duration / _timeStep);
         for (int step = 0; step <= numSteps; ++step) {
             double time = step * timeStep;
             double amp = 1.0;
-            forceVector = Eigen::VectorXd::Zero(activeDOFs);
-            if (time < 10) {
+            forceVector = Eigen::VectorXd::Zero(totalDOFs);
+            if (time < 20) {
                 amp = 5.0;
-                if (time < 5)
+                if (time < 10)
                     amp = sin(2 * time);
             }
             else {
                 amp = 0;
             }
 
-            
             //amp = 0;
 
-            if (time > 20) amp = 0;
+            if (time > 40) amp = 0;
             
             int pushedNode = numElements;
             int tip = 6 * pushedNode;
@@ -794,10 +951,10 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
     // Time integration (Newmark) simplified for 3D DOFs; uses lumped/approx mass so it's stable-ish.
     void CantileverBeam3D::simulateTimeDomain2(openGLframe& graphics, double duration, double timeStep, double dampingRatio) {
-        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(activeDOFs, activeDOFs);
-        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(activeDOFs);
-        Eigen::VectorXd Factive = forceVector.tail(activeDOFs);
+        Eigen::MatrixXd Kactive = globalStiffnessMatrix.bottomRightCorner(totalDOFs, totalDOFs);
+        Eigen::MatrixXd Mactive = globalMassMatrix.bottomRightCorner(totalDOFs, totalDOFs);
+        Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(totalDOFs);
+        Eigen::VectorXd Factive = forceVector;
         Eigen::Vector3d pointLoad = { 10000,0,0 };
 
         // Rayleigh damping using two lowest modes (if available)
@@ -821,8 +978,8 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
 
         // Newmark parameters
 
-        Eigen::VectorXd u = Eigen::VectorXd::Zero(activeDOFs); // displacement
-        Eigen::VectorXd v = Eigen::VectorXd::Zero(activeDOFs); // velocity
+        Eigen::VectorXd u = Eigen::VectorXd::Zero(totalDOFs); // displacement
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(totalDOFs); // velocity
         Eigen::VectorXd acc = Mactive.colPivHouseholderQr().solve(Factive - Kactive * u - Cactive * v);
 
         Eigen::MatrixXd LHS = Mactive + gamma * timeStep * Cactive + beta_nb * timeStep * timeStep * Kactive;
@@ -847,7 +1004,7 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
             //modify forcevector
             forceVector.segment<3>(base) = amp * pointLoad;
 
-            Factive = forceVector.tail(activeDOFs);
+            Factive = forceVector;
 
             // visualize current state: reconstruct full displacement vector
             showOnScreen(graphics, timeStep);
@@ -970,7 +1127,7 @@ int beam2_init(openGLframe &graphics)
     // Static analysis
     //Eigen::VectorXd forceVector = beam.applyEndpointLoad(endPointLoad);
     Eigen::VectorXd forceVector = Eigen::VectorXd::Zero(beam.DOF());
-    Eigen::Vector3d pointLoad = { 10000,0,0 };
+    Eigen::Vector3d pointLoad = { 1000,0,0 };
     forceVector.segment<3>(beam.DOF() - 6) = pointLoad;
     //beam.solveStaticDisplacement(forceVector);
     //beam.showOnScreen(graphics);
