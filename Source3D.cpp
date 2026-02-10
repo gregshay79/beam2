@@ -46,8 +46,10 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
 //    double area;             // Cross-sectional area (m^2)
 //
 //public:
-    BeamElement3D::BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area)
-        : length(_length), E(_E), G(_G), Iyy(_Iyy), Izz(_Izz), J(_J), rho(_rho), area(_area) {
+    BeamElement3D::BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area, double _outD)
+        : length(_length), E(_E), G(_G), Iyy(_Iyy), Izz(_Izz), J(_J), rho(_rho), area(_area), outD(_outD) {
+
+        mass = rho * area * length;
     }
 
     // Local stiffness matrix for 3D Euler-Bernoulli beam element (12x12)
@@ -165,6 +167,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
         // Build elements with tapered properties along the span
         int i;
         for (i = 0; i < numElements; ++i) {
+            masttieix[i] = -1;
             double taper_factor = 1.0 - _taper * double(i) / double(numElements);
             double outD = _outDia * taper_factor;
             double inD = _inDia * taper_factor;
@@ -175,7 +178,7 @@ double calculateHollowTubeArea(double outerDiameter, double innerDiameter) {
             }
             double Jp = 2.0 * I; // polar moment for circular tube Jp = Iyy + Izz = 2*I
             double G = E / (2.0 * (1.0 + nu));
-            elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A);
+            elements.emplace_back(elementLength, E, G, I, I, Jp, rho, A, outD);
 
             Eigen::Vector3d undeformed_pos(i * elementLength, 0.0, 0.0);
             ref_pos.segment<3>(i * 6) = undeformed_pos;
@@ -772,6 +775,11 @@ void CantileverBeam3D::stepForward(double timeStep, Eigen::VectorXd& forceVector
         x_world.segment<3>(idx) = (R_beam_to_world * (u.segment<3>(idx)+ref_pos.segment<3>(idx))) + base_displacement;
         // Rotate angles to global frame
         //x_world.segment<3>(idx + 3) = R_beam_to_world * u.segment<3>(idx + 3);//Note ref_pos angles are always all 0
+        // Compute alignment vector
+    }
+    for (int i = 0; i < numElements; ++i) {
+        int idx = 6 * i;
+        u_world[i] = x_world.segment<3>(idx + 6) - x_world.segment<3>(idx);
     }
 }
 
@@ -1046,7 +1054,7 @@ CantileverBeam3D make_beam()
     I = calculateHollowTubeMomentOfInertia(outerDiameter, innerDiameter);
     J = 2.0 * I; // polar moment for circular tube
 
-    int numElements = 20;
+    int numElements = MASTSEG;
     // Point load at free end in global (Fx, Fy, Fz). Original used vertical N; here we apply in Y direction
     //Eigen::Vector3d pointLoad(0, 100.0, 0.0); // convert lbf to N and apply in Y
 

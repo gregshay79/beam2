@@ -76,10 +76,12 @@ private:
     double area;             // Cross-sectional area (m^2)
 
 public:
-    BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area);
+    BeamElement3D(double _length, double _E, double _G, double _Iyy, double _Izz, double _J, double _rho, double _area, double _outD);
 
     Eigen::Matrix<double, 12, 12> getStiffnessMatrix() const;
     Eigen::Matrix<double, 12, 12> getMassMatrix() const;
+    double mass;             // mass of BeamElement
+    double outD;            //outer diameter
 
 };
 
@@ -119,18 +121,18 @@ private:
     Eigen::Vector3d base_displacement;
     Eigen::Vector3d base_orientation;
     Eigen::VectorXd base_velocity_world;
-    
+
     // Coupling matrices: forces on active DOFs due to base motion
     //Eigen::MatrixXd K_coupling;  // K(active_rows, base_cols)
     //Eigen::MatrixXd C_coupling;  // C(active_rows, base_cols)
     //Eigen::MatrixXd M_coupling;   // M(active_rows, base_cols)
-    
+
 public:
     CantileverBeam3D(double _length, double _E, double _nu, double _rho, double _area,
         int _numElements, double _outDia, double _inDia, double _taper);
 
     void solveStaticDisplacement(Eigen::VectorXd& forceVector);
-    void setupTimeDomainSimulation(double _timeStep,  double dampingRatio = 0.05);
+    void setupTimeDomainSimulation(double _timeStep, double dampingRatio = 0.05);
     void stepForward(double timeStep, Eigen::VectorXd& forceVector);
     void visualize(openGLframe& graphics);
     void solveFrequencyAnalysis(int numModes);
@@ -141,8 +143,13 @@ public:
     Eigen::VectorXd getBaseTransform(); // return both base displacement and orientation
     Eigen::VectorXd getBaseVelocity(); // return 
     Eigen::VectorXd x_world; // position
+    Eigen::Vector3d u_world[MASTSEG]; // alignment vectors (not normalized)
     int masttieix[MASTSEG];
     Eigen::Vector3d masttiepoint[34];
+    double mass_function(int ix) { return elements[ix].mass; }
+    double outer_diameter(int ix) { return elements[ix].outD; }
+    Eigen::Vector3d alignment(int ix) { return u_world[ix]; }
+
 
 
     void simulateTimeDomain(openGLframe& graphics, double duration, double _timeStep, double _dampingRatio = 0.05);
